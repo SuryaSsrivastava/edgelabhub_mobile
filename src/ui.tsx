@@ -1,0 +1,81 @@
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
+import type { ReactNode } from "react"
+import { colors, radius } from "./theme"
+
+export function Screen({ children, refreshing, onRefresh, scroll = true, padTop = true }: { children: ReactNode; refreshing?: boolean; onRefresh?: () => void; scroll?: boolean; padTop?: boolean }) {
+  const insets = useSafeAreaInsets()
+  const pad = { paddingTop: padTop ? insets.top + 8 : 0, paddingHorizontal: 16, paddingBottom: 32 }
+  if (!scroll) return <View style={[s.screen, pad]}>{children}</View>
+  return (
+    <ScrollView style={s.screen} contentContainerStyle={pad} keyboardShouldPersistTaps="handled"
+      refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.green} colors={[colors.green]} progressBackgroundColor={colors.card} /> : undefined}>
+      {children}
+    </ScrollView>
+  )
+}
+
+export const Title = ({ children, sub }: { children: ReactNode; sub?: string }) => (
+  <View style={{ marginBottom: 14 }}>
+    <Text style={s.title}>{children}</Text>
+    {sub ? <Text style={s.sub}>{sub}</Text> : null}
+  </View>
+)
+
+export const Card = ({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) => <View style={[s.card, style]}>{children}</View>
+
+export const Label = ({ children }: { children: ReactNode }) => <Text style={s.label}>{children}</Text>
+
+export const Muted = ({ children, style }: { children: ReactNode; style?: object }) => <Text style={[s.muted, style]}>{children}</Text>
+
+export function Pill({ children, active, onPress, color }: { children: ReactNode; active?: boolean; onPress?: () => void; color?: string }) {
+  const c = color ?? colors.green
+  return (
+    <Pressable onPress={onPress} style={[s.pill, active && { borderColor: c, backgroundColor: `${c}22` }]} hitSlop={6}>
+      <Text style={[s.pillText, active && { color: colors.text }]}>{children}</Text>
+    </Pressable>
+  )
+}
+
+export function Button({ children, onPress, busy, tone = "primary", disabled }: { children: ReactNode; onPress?: () => void; busy?: boolean; tone?: "primary" | "ghost" | "danger"; disabled?: boolean }) {
+  const bg = tone === "primary" ? colors.green : "transparent"
+  const fg = tone === "primary" ? "#04110b" : tone === "danger" ? colors.red : colors.text
+  return (
+    <Pressable onPress={onPress} disabled={busy || disabled} style={({ pressed }) => [s.btn, { backgroundColor: bg, borderColor: tone === "primary" ? colors.green : tone === "danger" ? `${colors.red}88` : colors.border, opacity: disabled ? 0.5 : pressed ? 0.8 : 1 }]}>
+      {busy ? <ActivityIndicator color={fg} /> : <Text style={[s.btnText, { color: fg }]}>{children}</Text>}
+    </Pressable>
+  )
+}
+
+export const Empty = ({ title, text }: { title: string; text?: string }) => (
+  <View style={s.empty}>
+    <Text style={s.emptyTitle}>{title}</Text>
+    {text ? <Text style={[s.muted, { textAlign: "center", marginTop: 4 }]}>{text}</Text> : null}
+  </View>
+)
+
+export const ErrorNote = ({ children }: { children: ReactNode }) => (
+  <View style={s.error}><Text style={{ color: colors.red, fontSize: 13 }}>{children}</Text></View>
+)
+
+export const Loading = () => <View style={{ paddingVertical: 40 }}><ActivityIndicator color={colors.green} /></View>
+
+export const Row = ({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) => <View style={[{ flexDirection: "row", alignItems: "center" }, style]}>{children}</View>
+
+export const tone = (n: number | null | undefined) => (n == null || n === 0 ? colors.text : n > 0 ? colors.green : colors.red)
+
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
+  title: { color: colors.text, fontSize: 26, fontWeight: "700", letterSpacing: -0.4 },
+  sub: { color: colors.muted, fontSize: 13, marginTop: 2 },
+  card: { backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 12 },
+  label: { color: colors.muted, fontSize: 10, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase", marginBottom: 6 },
+  muted: { color: colors.muted, fontSize: 12 },
+  pill: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6, marginRight: 8, marginBottom: 8 },
+  pillText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
+  btn: { borderWidth: 1, borderRadius: radius.pill, paddingVertical: 12, paddingHorizontal: 18, alignItems: "center", justifyContent: "center", minHeight: 46 },
+  btnText: { fontSize: 15, fontWeight: "700" },
+  empty: { alignItems: "center", paddingVertical: 40, paddingHorizontal: 24 },
+  emptyTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
+  error: { backgroundColor: `${colors.red}18`, borderColor: `${colors.red}55`, borderWidth: 1, borderRadius: radius.md, padding: 12, marginBottom: 12 },
+})
