@@ -100,7 +100,7 @@ export default function Settings() {
           </View>
           <Switch value={promos} onValueChange={togglePromos} trackColor={{ true: colors.green, false: colors.border }} thumbColor="#fff" />
         </Row>
-        <View style={{ marginTop: 12 }}><Button tone="ghost" onPress={test} busy={busy === "test"}>Send a test notification</Button></View>
+        {__DEV__ ? <View style={{ marginTop: 12 }}><Button tone="ghost" onPress={test} busy={busy === "test"}>Send a test notification</Button></View> : null}
       </Card>
 
       {liveNotificationAvailable() || livePreviewAvailable() ? (
@@ -127,7 +127,6 @@ export default function Settings() {
         <Label>About</Label>
         <Muted>EdgeLabHub mobile {Constants.expoConfig?.version}</Muted>
         {__DEV__ ? <Muted style={{ marginTop: 2 }}>Server: {apiServer()}</Muted> : null}
-        <Muted style={{ marginTop: 8 }}>The app never opens a broker order. Admins can close an open trade from Live trades, after a confirmation.</Muted>
       </Card>
 
       <Button tone="danger" onPress={out}>Sign out</Button>
