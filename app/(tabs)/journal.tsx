@@ -3,12 +3,12 @@ import { useRouter } from "expo-router"
 import { useState } from "react"
 import { Pressable, Text, View } from "react-native"
 import { api, type JournalTrade } from "../../src/api"
-import { Columns, Curve, PnlCalendar, RankBars } from "../../src/charts"
+import { AreaChart, Columns, Curve, PnlCalendar, RankBars } from "../../src/charts"
 import { DayTrades } from "../../src/day"
 import { CountUp, Press, Rise, Ring, Stat } from "../../src/fx"
 import { dayLabel, money } from "../../src/format"
 import { useLoad } from "../../src/hooks"
-import { breakdown, dailySeries, equityPoints, groupByDay, inRange, journalStats, maxDrawdown, pnlByDay, pnlOf, rOf, streaks, weekdays } from "../../src/journal"
+import { breakdown, byHour, byMonth, dailySeries, drawdownSeries, equityPoints, equityPointsR, groupByDay, holdMinutes, inRange, journalStats, maxDrawdown, minutesText, pnlByDay, pnlOf, rBuckets, rOf, rollingWinRate, sessionOf, streaks, weekdays } from "../../src/journal"
 import { ShotBadge } from "../../src/shots"
 import { inMode, inScope, ScopeBar, useScope } from "../../src/scope"
 import { colors, radius } from "../../src/theme"
@@ -91,16 +91,32 @@ function Segmented({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) 
 }
 
 function Overview({ trades, range, setRange }: { trades: JournalTrade[]; range: number; setRange: (n: number) => void }) {
+  const [unit, setUnit] = useState<"usd" | "r">("usd")
   const t = inRange(trades, range)
   const st = journalStats(t)
   const run = streaks(t)
   const dd = maxDrawdown(t)
   const daily = dailySeries(t, 30)
   const best = daily.reduce((m, d) => (d.pnl > m ? d.pnl : m), 0)
+  const totalR = t.reduce((a, x) => a + rOf(x), 0)
+  const underwater = drawdownSeries(t)
+  const buckets = rBuckets(t)
+  const sessions = breakdown(t, (x) => [sessionOf(x.opened_at)])
+  const sides = breakdown(t, (x) => [x.side])
+  const symbols = breakdown(t, (x) => [x.symbol])
+  const symbolRows = symbols.length > 6 ? [...symbols.slice(0, 4), ...symbols.slice(-2)] : symbols  // the best few and the worst two
+  const rolling = rollingWinRate(t, 20)
+  const months = byMonth(t)
+  const hold = holdMinutes(t)
+  const ratings = breakdown(t, (x) => [`${x.rating}★`]).sort((a, b) => b.key.localeCompare(a.key))
   const setups = breakdown(t, (x) => (x.setup ? [x.setup] : [])).slice(0, 6)
   const feelings = breakdown(t, (x) => x.emotions).slice(0, 6)
   const discipline = breakdown(t, (x) => (x.followed_plan === true ? ["Followed the plan"] : x.followed_plan === false ? ["Broke the plan"] : []))
-  const wins = st.wins, losses = st.losses
+  const rows = (xs: { key: string; n: number; net: number; winRate: number }[]) => xs.map((x) => ({ key: x.key, value: x.net, sub: `${x.n} trade${x.n === 1 ? "" : "s"} · ${x.winRate.toFixed(0)}% wins` }))
+  const holdNote = hold.win != null && hold.loss != null
+    ? hold.loss > hold.win * 1.5 ? `You hold losing trades about ${(hold.loss / hold.win).toFixed(1)}× longer than winners. Cutting losers sooner usually helps.`
+      : hold.win > hold.loss * 1.5 ? "You let winners run longer than losers. That is the pattern to keep." : "Winners and losers are held for about the same time."
+    : null
 
   return (
     <>
@@ -111,8 +127,13 @@ function Overview({ trades, range, setRange }: { trades: JournalTrade[]; range: 
         </Row>
         {t.length === 0 ? <Muted style={{ marginVertical: 24, textAlign: "center" }}>No trades in this period.</Muted> : (
           <>
-            <CountUp key={range} value={st.net} format={usd} style={{ color: tone(st.net), fontSize: 36, fontWeight: "800", letterSpacing: -1.2 }} />
-            <View style={{ marginTop: 8 }}><Curve key={range} points={equityPoints(t)} height={130} /></View>
+            <Row style={{ justifyContent: "space-between" }}>
+              {unit === "usd"
+                ? <CountUp key={`${range}u`} value={st.net} format={usd} style={{ color: tone(st.net), fontSize: 36, fontWeight: "800", letterSpacing: -1.2 }} />
+                : <CountUp key={`${range}r`} value={totalR} format={(n) => `${sgn(n)}R`} style={{ color: tone(totalR), fontSize: 36, fontWeight: "800", letterSpacing: -1.2 }} />}
+              <Row><Pill active={unit === "usd"} onPress={() => setUnit("usd")}>$</Pill><Pill active={unit === "r"} onPress={() => setUnit("r")}>R</Pill></Row>
+            </Row>
+            <View style={{ marginTop: 8 }}><Curve key={`${range}${unit}`} points={unit === "usd" ? equityPoints(t) : equityPointsR(t)} height={130} /></View>
             <Row style={{ justifyContent: "space-between", marginTop: 8 }}>
               <Muted>Max drawdown <Text style={{ color: colors.red, fontWeight: "800" }}>{money(-dd)}</Text></Muted>
               <Muted>Best day <Text style={{ color: colors.green, fontWeight: "800" }}>{usd(best)}</Text></Muted>
@@ -131,7 +152,10 @@ function Overview({ trades, range, setRange }: { trades: JournalTrade[]; range: 
               <Stat label="Streak" tint={run.current >= 0 ? colors.green : colors.red}>{run.current === 0 ? "-" : run.current > 0 ? `${run.current} wins` : `${-run.current} losses`}</Stat>
               <Stat label="Avg win" tint={colors.green}>{usd(st.avgWin)}</Stat>
               <Stat label="Avg loss" tint={colors.red}>{usd(st.avgLoss)}</Stat>
+              {hold.win != null ? <Stat label="Hold · winners">{minutesText(hold.win)}</Stat> : null}
+              {hold.loss != null ? <Stat label="Hold · losers">{minutesText(hold.loss)}</Stat> : null}
             </View>
+            {holdNote ? <Muted style={{ marginBottom: 12, lineHeight: 18 }}>{holdNote}</Muted> : null}
           </Rise>
 
           <Card delay={140}>
@@ -146,8 +170,8 @@ function Overview({ trades, range, setRange }: { trades: JournalTrade[]; range: 
                 <Text style={{ color: colors.text, fontSize: 22, fontWeight: "800" }}>{st.winRate.toFixed(0)}%</Text><Muted>win rate</Muted>
               </Ring>
               <View style={{ flex: 1, gap: 8 }}>
-                <Row style={{ justifyContent: "space-between" }}><Row><Dot c={colors.green} /><Text style={lbl}>Wins</Text></Row><Text style={[val, { color: colors.green }]}>{wins}</Text></Row>
-                <Row style={{ justifyContent: "space-between" }}><Row><Dot c={colors.red} /><Text style={lbl}>Losses</Text></Row><Text style={[val, { color: colors.red }]}>{losses}</Text></Row>
+                <Row style={{ justifyContent: "space-between" }}><Row><Dot c={colors.green} /><Text style={lbl}>Wins</Text></Row><Text style={[val, { color: colors.green }]}>{st.wins}</Text></Row>
+                <Row style={{ justifyContent: "space-between" }}><Row><Dot c={colors.red} /><Text style={lbl}>Losses</Text></Row><Text style={[val, { color: colors.red }]}>{st.losses}</Text></Row>
                 <Row style={{ justifyContent: "space-between" }}><Text style={lbl}>Best trade</Text><Text style={[val, { color: colors.green }]}>{usd(st.best)}</Text></Row>
                 <Row style={{ justifyContent: "space-between" }}><Text style={lbl}>Worst trade</Text><Text style={[val, { color: colors.red }]}>{usd(st.worst)}</Text></Row>
                 <Row style={{ justifyContent: "space-between" }}><Text style={lbl}>Longest win run</Text><Text style={val}>{run.bestWin}</Text></Row>
@@ -155,14 +179,45 @@ function Overview({ trades, range, setRange }: { trades: JournalTrade[]; range: 
             </Row>
           </Card>
 
-          <Card delay={260}>
+          {underwater.length > 2 ? (
+            <Card delay={240}>
+              <Row style={{ justifyContent: "space-between" }}><Label>Drawdown</Label><Muted>now <Text style={{ color: underwater[underwater.length - 1] < 0 ? colors.red : colors.green, fontWeight: "800" }}>{money(underwater[underwater.length - 1])}</Text> · worst <Text style={{ color: colors.red, fontWeight: "800" }}>{money(-dd)}</Text></Muted></Row>
+              <AreaChart key={range} points={underwater} color={colors.red} fillTo="top" baseline={0} height={90} />
+              <Muted style={{ marginTop: 6 }}>How far below your best point the account has been. The flat line at the top is a new high.</Muted>
+            </Card>
+          ) : null}
+
+          <Card delay={280}>
+            <Label>R-multiple distribution</Label>
+            <Columns data={buckets.map((b) => ({ label: b.label, value: b.value }))} format={(n) => `${n} trade${n === 1 ? "" : "s"}`} height={110} color={(_d, i) => (buckets[i].sign < 0 ? colors.red : colors.green)} />
+            <Muted style={{ marginTop: 6 }}>Trades counted by result in R. A healthy journal has a short red side and a longer green tail.</Muted>
+          </Card>
+
+          {rolling.length >= 3 ? (
+            <Card delay={320}>
+              <Row style={{ justifyContent: "space-between" }}><Label>Win rate, last 20 trades</Label><Muted>now <Text style={{ color: colors.text, fontWeight: "800" }}>{rolling[rolling.length - 1].toFixed(0)}%</Text></Muted></Row>
+              <AreaChart key={range} points={rolling} color={colors.blue} baseline={50} from={0} to={100} height={90} />
+            </Card>
+          ) : null}
+
+          <Card delay={360}>
             <Label>By weekday</Label>
             <Columns data={weekdays(t).map((d) => ({ label: d.label, value: d.pnl }))} format={usd} height={110} />
           </Card>
 
-          {setups.length > 0 ? <Card delay={300}><Label>Setups</Label><RankBars rows={setups.map((x) => ({ key: x.key, value: x.net, sub: `${x.n} trade${x.n === 1 ? "" : "s"} · ${x.winRate.toFixed(0)}% wins` }))} format={usd} /></Card> : null}
-          {discipline.length > 0 ? <Card delay={340}><Label>Discipline</Label><RankBars rows={discipline.map((x) => ({ key: x.key, value: x.net, sub: `${x.n} trade${x.n === 1 ? "" : "s"}` }))} format={usd} /></Card> : null}
-          {feelings.length > 0 ? <Card delay={380}><Label>Emotions</Label><RankBars rows={feelings.map((x) => ({ key: x.key, value: x.net, sub: `${x.n}×` }))} format={usd} /></Card> : null}
+          <Card delay={400}>
+            <Label>By hour you opened the trade</Label>
+            <Columns data={byHour(t).map((d) => ({ label: d.label, value: d.pnl }))} format={usd} height={110} labelEvery={3} />
+          </Card>
+
+          {sessions.length > 0 ? <Card delay={440}><Label>Sessions</Label><RankBars rows={rows(sessions)} format={usd} /></Card> : null}
+          {sides.length > 1 ? <Card delay={480}><Label>Long and short</Label><RankBars rows={rows(sides)} format={usd} /></Card> : null}
+          {months.length >= 2 ? <Card delay={520}><Label>By month</Label><Columns data={months.map((m) => ({ label: m.label, value: m.pnl }))} format={usd} height={110} labelEvery={months.length > 6 ? 2 : 1} /></Card> : null}
+          {symbolRows.length > 1 ? <Card delay={560}><Label>By symbol</Label><RankBars rows={rows(symbolRows)} format={usd} /></Card> : null}
+          {setups.length > 0 ? <Card delay={600}><Label>Setups</Label><RankBars rows={rows(setups)} format={usd} /></Card> : null}
+          {ratings.length > 1 ? <Card delay={640}><Label>Your own rating, against the result</Label><RankBars rows={rows(ratings)} format={usd} /></Card> : null}
+          {discipline.length > 0 ? <Card delay={680}><Label>Discipline</Label><RankBars rows={discipline.map((x) => ({ key: x.key, value: x.net, sub: `${x.n} trade${x.n === 1 ? "" : "s"}` }))} format={usd} /></Card> : null}
+          {feelings.length > 0 ? <Card delay={720}><Label>Emotions</Label><RankBars rows={feelings.map((x) => ({ key: x.key, value: x.net, sub: `${x.n}×` }))} format={usd} /></Card> : null}
         </>
       ) : null}
     </>

@@ -7,6 +7,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context"
 import { api } from "../src/api"
 import { AuthProvider, useAuth } from "../src/auth"
 import { onLiveNotificationPress } from "../src/liveservice"
+import { stopLivePreview } from "../src/livepreview"
 import { routeFor } from "../src/push"
 import { ScopeProvider } from "../src/scope"
 import { colors } from "../src/theme"
@@ -21,7 +22,12 @@ function Gate() {
   useEffect(() => {
     if (!ready) return
     SplashScreen.hideAsync().catch(() => {})
-    const onLogin = segments[0] === "login"
+    if (!user && segments[0] === "auth") {  // Google sign-in has come back to the app: the sign-in screen under it shows the result (or the error), and home follows once the session is made
+      if (router.canGoBack()) router.back()
+      else router.replace("/login")
+      return
+    }
+    const onLogin = segments[0] === "login" || segments[0] === "auth"
     if (!user && !onLogin) router.replace("/login")
     else if (user && onLogin) router.replace("/")
   }, [ready, user, segments, router])
@@ -32,6 +38,8 @@ function Gate() {
     const open = (r: Notifications.NotificationResponse | null) => {
       const data = r?.notification.request.content.data as { link?: string; id?: number } | undefined
       if (!r) return
+      if (r.actionIdentifier === "hide") { void stopLivePreview(); return }  // the cross on the live-trades preview
+      if (r.actionIdentifier === "review") { router.push("/positions" as never); return }  // "Close trade…": the Live trades screen, where closing asks to confirm
       if (data?.id) api.readNotice(Number(data.id)).catch(() => {}) // opening a notification counts as reading it (and as an open for a broadcast)
       router.push(routeFor(data?.link) as never)
     }
@@ -50,8 +58,11 @@ function Gate() {
   return (
     <Stack screenOptions={{ animation: "slide_from_right", headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text, headerShadowVisible: false, contentStyle: { backgroundColor: colors.bg } }}>
       <Stack.Screen name="login" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/index" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/mobile" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="forward/[id]" options={{ title: "Forward test" }} />
+      <Stack.Screen name="goals" options={{ title: "Goals and limits" }} />
       <Stack.Screen name="profile" options={{ title: "Profile" }} />
       <Stack.Screen name="settings" options={{ title: "Settings" }} />
       <Stack.Screen name="alerts" options={{ title: "Alerts" }} />

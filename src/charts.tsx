@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Animated, Easing, Pressable, Text, View } from "react-native"
+import Svg, { Defs, Line, LinearGradient as SvgGradient, Path, Stop } from "react-native-svg"
 import { Sparkline, tick, useReducedMotion } from "./fx"
 import { money } from "./format"
 import { colors, radius } from "./theme"
@@ -103,7 +104,7 @@ function useGrow(key: string, ms = 900) {
 }
 
 /** Columns above and below a zero line, growing in one after another. Tap one to read it. */
-export function Columns({ data, height = 130, format, labelEvery = 1 }: { data: { label: string; value: number }[]; height?: number; format: (n: number) => string; labelEvery?: number }) {
+export function Columns({ data, height = 130, format, labelEvery = 1, color }: { data: { label: string; value: number }[]; height?: number; format: (n: number) => string; labelEvery?: number; color?: (d: { label: string; value: number }, i: number) => string }) {
   const [sel, setSel] = useState<number | null>(null)
   const p = useGrow(data.map((d) => d.value.toFixed(2)).join(","))
   const top = Math.max(0, ...data.map((d) => d.value)), bot = Math.max(0, ...data.map((d) => -d.value))
@@ -112,7 +113,7 @@ export function Columns({ data, height = 130, format, labelEvery = 1 }: { data: 
   const chosen = sel != null ? data[sel] : null
   return (
     <View>
-      <Text style={{ color: chosen ? (chosen.value >= 0 ? colors.green : colors.red) : colors.muted, fontSize: 12, fontWeight: "700", marginBottom: 8, height: 16 }}>
+      <Text style={{ color: chosen ? (color ? color(chosen, sel!) : chosen.value >= 0 ? colors.green : colors.red) : colors.muted, fontSize: 12, fontWeight: "700", marginBottom: 8, height: 16 }}>
         {chosen ? `${chosen.label}: ${format(chosen.value)}` : "Tap a bar"}
       </Text>
       <View style={{ height, flexDirection: "row" }}>
@@ -120,7 +121,7 @@ export function Columns({ data, height = 130, format, labelEvery = 1 }: { data: 
         {data.map((d, i) => {
           const local = Math.max(0, Math.min(1, p * (n + 3) / 3 - i / 3))  // each bar starts a little after the one before
           const h = Math.max(d.value === 0 ? 0 : 2, Math.abs(d.value) * scale * local)
-          const c = d.value >= 0 ? colors.green : colors.red
+          const c = color ? color(d, i) : d.value >= 0 ? colors.green : colors.red
           return (
             <Pressable key={i} onPress={() => { tick(); setSel(sel === i ? null : i) }} style={{ flex: 1, paddingHorizontal: n > 20 ? 1 : 3 }}>
               <View style={{ position: "absolute", left: n > 20 ? 1 : 3, right: n > 20 ? 1 : 3, top: d.value >= 0 ? zero - h : zero, height: h, borderRadius: 3, backgroundColor: c, opacity: sel == null || sel === i ? 1 : 0.35 }} />
@@ -156,6 +157,37 @@ export function RankBars({ rows, format }: { rows: { key: string; value: number;
           </View>
         )
       })}
+    </View>
+  )
+}
+
+/**
+ * A line with a filled area that draws itself in. `baseline` is a dashed reference line (zero for a drawdown, 50 for a win rate); the fill runs from the line to `fillTo`.
+ * `from`/`to` fix the scale when it should not follow the data (a win rate always spans 0 to 100).
+ */
+export function AreaChart({ points, height = 96, color = colors.green, baseline, fillTo = "bottom", from, to }: { points: number[]; height?: number; color?: string; baseline?: number; fillTo?: "top" | "bottom"; from?: number; to?: number }) {
+  const [w, setW] = useState(0)
+  const p = useGrow(points.length + ":" + points.slice(-3).map((v) => v.toFixed(1)).join(","), 1100)
+  const n = points.length
+  if (n < 2) return <View style={{ height }} />
+  const lo = from ?? Math.min(...points, baseline ?? Infinity), hi = to ?? Math.max(...points, baseline ?? -Infinity), span = hi - lo || 1
+  const y = (v: number) => 4 + ((hi - v) / span) * (height - 8)
+  const x = (i: number) => (i / (n - 1)) * w
+  const line = points.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ")
+  let len = 0
+  for (let i = 1; i < n; i++) len += Math.hypot(x(i) - x(i - 1), y(points[i]) - y(points[i - 1]))
+  const edge = fillTo === "top" ? 0 : height
+  const id = `ar${color.slice(1)}${fillTo}`
+  return (
+    <View onLayout={(e) => setW(Math.floor(e.nativeEvent.layout.width))} style={{ height }}>
+      {w > 0 ? (
+        <Svg width={w} height={height}>
+          <Defs><SvgGradient id={id} x1="0" y1={fillTo === "top" ? "1" : "0"} x2="0" y2={fillTo === "top" ? "0" : "1"}><Stop offset="0" stopColor={color} stopOpacity={0.4} /><Stop offset="1" stopColor={color} stopOpacity={0} /></SvgGradient></Defs>
+          {baseline != null ? <Line x1={0} x2={w} y1={y(baseline)} y2={y(baseline)} stroke={colors.muted} strokeOpacity={0.5} strokeWidth={1} strokeDasharray={[3, 4]} /> : null}
+          <Path d={`${line} L${w} ${edge} L0 ${edge} Z`} fill={`url(#${id})`} opacity={p} />
+          <Path d={line} stroke={color} strokeWidth={2} fill="none" strokeLinejoin="round" strokeLinecap="round" strokeDasharray={[len * p, len]} />
+        </Svg>
+      ) : null}
     </View>
   )
 }

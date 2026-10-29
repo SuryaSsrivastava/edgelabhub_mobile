@@ -2,6 +2,7 @@ import * as Crypto from "expo-crypto"
 import * as Linking from "expo-linking"
 import * as SecureStore from "expo-secure-store"
 import * as WebBrowser from "expo-web-browser"
+import { Platform } from "react-native"
 import { DEFAULT_API_URL } from "./config"
 
 // ---- types: the parts of the EdgeLabHub API this app reads --------------------------------------------------------------------------------------------------------------------
@@ -10,6 +11,7 @@ export type User = { id: number; email: string; name: string; timezone: string; 
 export type PlanUsage = { plan: string; lapsed: boolean; limits: Record<string, number | null>; used: Record<string, number>; resets_on: string | null; ends_on: string | null }
 export type Notice = { id: number; kind: string; title: string; body: string; link: string; read: boolean; created_at: string }
 export type Account = {
+  goals?: Partial<Goals>
   id: number; name: string; kind: string; broker?: string | null; server?: string | null; is_prop: boolean; status: "active" | "connecting" | "error" | "paused"
   hint: string; prop: { balance: number; equity: number; today: number } | null
 }
@@ -44,6 +46,10 @@ export type BacktestTrade = { id: number; symbol: string; side: string; entry_at
 export type ManualShot = { id: number; trade_id: number; caption: string; thumb: string; created_at: string }
 export type ReplayShot = { id: number; session_id: number; trade_id: number | null; caption: string; thumb: string; created_at: string }
 export type BrokerInfo = { id: "dhan" | "fyers" | "angel"; label: string; fields: { key: string; label: string; secret: boolean }[]; help: string; login: boolean; oauth: boolean }
+export type Goals = { max_trades_day: number | null; max_daily_loss: number | null; max_losses_in_row: number | null; daily_goal: number | null; monthly_goal: number | null; profit_target: number | null }
+export type Rules = Goals & { checklist: string[] }
+export type Meter = { key: string; label: string; kind: "limit" | "goal"; limit: number; value: number; state: "ok" | "warn" | "breached" | "achieved"; text: string; period: "day" | "month" | "total" }
+export type DisciplineScope = { scope: string; account_id: number | null; meters: Meter[] }
 export type Prefs = { push: boolean; promos?: boolean; [k: string]: unknown }
 
 // ---- the connection -----------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -135,7 +141,10 @@ const GOOGLE_ERRORS: Record<string, string> = {
 export async function googleSignIn(): Promise<User | null> {
   const verifier = b64url(btoa(String.fromCharCode(...Crypto.getRandomBytes(32))))  // 43 characters
   const challenge = b64url(await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, verifier, { encoding: Crypto.CryptoEncoding.BASE64 }))
-  const result = await WebBrowser.openAuthSessionAsync(`${server}/auth/google/login?mobile_challenge=${challenge}`, "edgelabhub://auth")
+  // Android comes back through the site's web address, which the app has proved it owns (so no "open the external app?" question); iPhone through the app's own address
+  const viaLink = Platform.OS === "android" && apiOrigin().startsWith("https://")
+  const back = viaLink ? `${apiOrigin()}/auth/mobile` : "edgelabhub://auth"
+  const result = await WebBrowser.openAuthSessionAsync(`${server}/auth/google/login?mobile_challenge=${challenge}${viaLink ? "&mobile_return=link" : ""}`, back)
   if (result.type !== "success") return null
   const q = Linking.parse(result.url).queryParams ?? {}
   if (typeof q.error === "string") throw new ApiError(400, GOOGLE_ERRORS[q.error] ?? "Google sign-in did not work. Try again.")
@@ -180,6 +189,10 @@ export const api = {
   asset: (market: string, symbol: string) => request<AssetDetail>(`/screener/${market}/${encodeURIComponent(symbol)}`),
   strategies: (limit = 30) => request<StrategyRow[]>(`/strategies/overview?limit=${limit}&skip_forward=true`),
   backtestTrades: (id: number) => request<BacktestTrade[]>(`/backtests/${id}/trades`),
+  rules: () => request<Rules>("/journal/rules"),
+  saveRules: (b: Rules) => request<Rules>("/journal/rules", { method: "PUT", body: JSON.stringify(b) }),
+  saveAccountGoals: (id: number, goals: Goals) => request<Account>(`/accounts/${id}`, { method: "PATCH", body: JSON.stringify({ goals }) }),
+  discipline: () => request<{ scopes: DisciplineScope[] }>("/journal/discipline"),
   journalShotCounts: () => request<Record<string, number>>("/journal/screenshot-counts"),
   tradeShots: (id: number) => request<ManualShot[]>(`/journal/trades/${id}/shots`),
   tradeShotImage: (id: number) => request<{ image: string }>(`/journal/shots/${id}/image`),

@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from "react-native"
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Path, RadialGradient, Rect, Stop } from "react-native-svg"
+import { Backdrop } from "./background"
 import { colors, radius } from "./theme"
 
 /** A light tick under the finger. Silent where the phone has no haptics. */
@@ -19,11 +20,12 @@ export function useReducedMotion() {
   return reduced
 }
 
-/** The colour that drifts slowly behind every screen (the website's ambient background): deep teal and indigo glows. */
+/** What moves behind every screen: deep teal and indigo glows that drift, and (src/background.tsx) a grid, two scrolling chart lines and rising particles. */
 export function Ambient() {
   const reduced = useReducedMotion()
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Backdrop reduced={reduced} />
       <Orb color="#22d38a" size={420} left={-160} top={-120} dx={40} dy={50} ms={16000} reduced={reduced} opacity={0.2} />
       <Orb color="#6366f1" size={480} right={-200} top={160} dx={-50} dy={40} ms={22000} reduced={reduced} opacity={0.18} />
       <Orb color="#38bdf8" size={380} left={-60} bottom={-160} dx={60} dy={-40} ms={19000} reduced={reduced} opacity={0.12} />

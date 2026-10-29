@@ -106,3 +106,62 @@ export function streaks(trades: JournalTrade[]): { current: number; bestWin: num
   }
   return { current, bestWin, worstLoss }
 }
+
+/** Running total in R (results measured in the money risked on each trade), oldest first. */
+export function equityPointsR(trades: JournalTrade[]): number[] {
+  let run = 0
+  return [0, ...[...trades].sort((a, b) => +new Date(a.exit_at ?? a.opened_at) - +new Date(b.exit_at ?? b.opened_at)).map((t) => (run += rOf(t)))]
+}
+
+/** How far below its own highest point the equity curve is after each trade (zero at a new high, never above zero): the "underwater" curve. */
+export function drawdownSeries(trades: JournalTrade[]): number[] {
+  let peak = 0
+  return equityPoints(trades).map((v) => { peak = Math.max(peak, v); return v - peak })
+}
+
+/** How many trades ended in each band of R: a worst loss, a normal loss, a small win, a big win. */
+export function rBuckets(trades: JournalTrade[]): { label: string; value: number; sign: number }[] {
+  const edges: [string, (r: number) => boolean, number][] = [
+    ["≤-2R", (r) => r <= -2, -1], ["-2..-1", (r) => r > -2 && r <= -1, -1], ["-1..0", (r) => r > -1 && r < 0, -1],
+    ["0..1", (r) => r >= 0 && r < 1, 1], ["1..2", (r) => r >= 1 && r < 2, 1], ["2..3", (r) => r >= 2 && r < 3, 1], ["≥3R", (r) => r >= 3, 1],
+  ]
+  const rs = trades.map(rOf)
+  return edges.map(([label, inBand, sign]) => ({ label, sign, value: rs.filter(inBand).length }))
+}
+
+/** Result by the hour the trade was opened (the phone's own time): 24 columns. */
+export function byHour(trades: JournalTrade[]): { label: string; pnl: number; n: number }[] {
+  const out = Array.from({ length: 24 }, (_, h) => ({ label: String(h), pnl: 0, n: 0 }))
+  for (const t of trades) { const h = new Date(t.opened_at).getHours(); out[h].pnl += pnlOf(t); out[h].n++ }
+  return out
+}
+
+/** Which market session a trade was opened in, by UTC hour (as on the website): Asian 00-07, London 07-12, New York 12-21, otherwise off-hours. */
+export const sessionOf = (iso: string) => { const h = new Date(iso).getUTCHours(); return h < 7 ? "Asian" : h < 12 ? "London" : h < 21 ? "New York" : "Off-hours" }
+
+/** Win rate over the last `window` trades, after each trade from the `window`th on: does it hold up or fade? */
+export function rollingWinRate(trades: JournalTrade[], window = 20): number[] {
+  const asc = [...trades].sort((a, b) => +new Date(a.opened_at) - +new Date(b.opened_at)).map((t) => (pnlOf(t) > 0 ? 1 : 0))
+  const out: number[] = []
+  for (let i = window - 1; i < asc.length; i++) out.push((asc.slice(i - window + 1, i + 1).reduce((a: number, b) => a + b, 0) / window) * 100)
+  return out
+}
+
+/** Result per calendar month, oldest first. */
+export function byMonth(trades: JournalTrade[]): { label: string; pnl: number }[] {
+  const m = new Map<string, { at: number; label: string; pnl: number }>()
+  for (const t of trades) {
+    const d = new Date(t.opened_at), k = `${d.getFullYear()}-${d.getMonth()}`
+    const g = m.get(k) ?? { at: new Date(d.getFullYear(), d.getMonth(), 1).getTime(), label: `${d.toLocaleDateString([], { month: "short" })} ${String(d.getFullYear()).slice(2)}`, pnl: 0 }
+    g.pnl += pnlOf(t); m.set(k, g)
+  }
+  return [...m.values()].sort((a, b) => a.at - b.at)
+}
+
+/** Average minutes a trade was held, for winners and for losers (only trades that have an exit time). */
+export function holdMinutes(trades: JournalTrade[]): { win: number | null; loss: number | null } {
+  const mins = (ts: JournalTrade[]) => { const m = ts.filter((t) => t.exit_at).map((t) => (+new Date(t.exit_at!) - +new Date(t.opened_at)) / 60_000).filter((x) => x >= 0); return m.length ? m.reduce((a, b) => a + b, 0) / m.length : null }
+  return { win: mins(trades.filter((t) => pnlOf(t) > 0)), loss: mins(trades.filter((t) => pnlOf(t) < 0)) }
+}
+
+export const minutesText = (m: number) => (m < 60 ? `${Math.round(m)}m` : m < 1440 ? `${Math.floor(m / 60)}h ${Math.round(m % 60)}m` : `${(m / 1440).toFixed(1)}d`)

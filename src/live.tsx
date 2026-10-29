@@ -3,11 +3,12 @@ import { useEffect, useState } from "react"
 import { Alert, Pressable, Text, View } from "react-native"
 import { api, type Account, type LivePosition } from "./api"
 import { useAuth } from "./auth"
-import { Pulse } from "./fx"
+import { CountUp, Pulse } from "./fx"
 import { money, price } from "./format"
 import { useLoad } from "./hooks"
-import { startLiveNotification } from "./liveservice"
-import { colors, radius } from "./theme"
+import { CloseX, LiveLine, RangeBar, useProfitHistory } from "./livechart"
+import { clearLiveNotificationHidden, startLiveNotification } from "./liveservice"
+import { colors } from "./theme"
 import { Card, Muted, Row, tone } from "./ui"
 
 /** The accounts whose open trades can be watched live. */
@@ -28,8 +29,11 @@ function AccountLive({ account }: { account: Account }) {
   const v = live.data
   const open = (v?.positions ?? []).filter((p) => !gone.includes(p.id))
   const canClose = !!user?.is_admin && account.kind === "metaapi" && !account.is_prop  // the server's own rule for trading live
+  const history = useProfitHistory(open, v?.at)
   const running = v?.state === "live" && open.length > 0
   useEffect(() => { if (running) void startLiveNotification(account.id, canClose) }, [running, account.id, canClose])  // a trade is open: keep it in the notification bar too (if the member turned that on)
+  const none = v?.state === "live" && open.length === 0
+  useEffect(() => { if (none) void clearLiveNotificationHidden() }, [none])  // nothing open: if they had hidden the notification, the next trade shows it again
   if (!running) return null
   const floating = open.reduce((sum, p) => sum + p.profit, 0)
 
@@ -61,16 +65,14 @@ function AccountLive({ account }: { account: Account }) {
                   <Text style={{ color: long ? colors.green : colors.red, fontSize: 10.5, fontWeight: "800" }}>{p.side.toUpperCase()}{p.volume ? ` ${p.volume}` : ""}</Text>
                 </View>
               </Row>
-              <Text style={{ color: tone(p.profit), fontSize: 16, fontWeight: "800" }}>{money(p.profit, v.currency, true)}</Text>
+              <Row style={{ gap: 10 }}>
+                <CountUp value={p.profit} format={(n) => money(n, v.currency, true)} ms={600} style={{ color: tone(p.profit), fontSize: 16, fontWeight: "800" }} />
+                {canClose ? <CloseX onPress={() => close(p)} busy={closing === p.id} disabled={closing !== null} /> : null}
+              </Row>
             </Row>
-            <Row style={{ justifyContent: "space-between", marginTop: 4 }}>
-              <Muted>{price(p.open_price)} → {price(p.price)}{p.stop ? ` · SL ${price(p.stop)}` : ""}{p.target ? ` · TP ${price(p.target)}` : ""}</Muted>
-              {canClose ? (
-                <Pressable onPress={() => close(p)} disabled={closing !== null} hitSlop={8} style={{ borderWidth: 1, borderColor: `${colors.red}88`, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 4, opacity: closing === p.id ? 0.5 : 1 }}>
-                  <Text style={{ color: colors.red, fontSize: 12, fontWeight: "800" }}>{closing === p.id ? "Closing..." : "Close"}</Text>
-                </Pressable>
-              ) : null}
-            </Row>
+            <View style={{ marginTop: 6 }}><LiveLine points={history[p.id] ?? [p.profit]} /></View>
+            <RangeBar stop={p.stop} target={p.target} open={p.open_price} now={p.price} />
+            <Muted style={{ marginTop: 6 }}>{price(p.open_price)} → {price(p.price)}</Muted>
           </View>
         )
       })}

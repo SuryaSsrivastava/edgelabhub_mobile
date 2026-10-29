@@ -9,12 +9,12 @@ import { api, ApiError, restoreSession, type LivePosition } from "./api"
  * last trade closes. It starts from the app (Home, Live trades) while the app is open, because Android does not let an app in the background start one. A trade that opens while the
  * app is closed is announced by a push notification instead; tapping it opens the app, which then starts this.
  *
- * This file is loaded at app start (see index.js), before any screen, since the service has to be registered for Android to start it with no screen. Where Notifee is not there (Expo Go,
- * iPhone) every function here quietly does nothing.
+ * This file is loaded at app start (app/_layout.tsx imports it), since the service has to be registered for Android to start it with no screen. Where Notifee is not there (Expo Go,
+ * iPhone, or a build made without LIVE_NOTIFICATION=1) every function here quietly does nothing.
  */
 type Notifee = typeof import("@notifee/react-native")
 let N: Notifee | null = null
-if (Platform.OS === "android" && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient) {
+if (process.env.EXPO_PUBLIC_LIVE_NOTIFICATION === "1" && Platform.OS === "android" && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient) {
   try { N = require("@notifee/react-native") as Notifee } catch { N = null }  // eslint-disable-line @typescript-eslint/no-require-imports
 }
 
@@ -22,6 +22,7 @@ const CHANNEL = "live-trades"
 const ENABLED = "edgelab.livenotif"
 const ACCOUNTS = "edgelab.livenotif.accounts"
 const CAN_CLOSE = "edgelab.livenotif.canclose"
+const HIDDEN = "edgelab.livenotif.hidden"  // the member pressed the cross: stay hidden until the open trades are over
 const POLL_MS = 10_000
 const QUIET_POLLS = 3  // this many looks in a row with nothing open ends the service
 const FAILED_POLLS = 8  // and this many failures in a row (no connection for over a minute)
@@ -51,6 +52,7 @@ export async function setLiveNotificationEnabled(on: boolean): Promise<{ ok: boo
 /** Remember which accounts to watch and who may close, then start the service unless it is already showing. Called while the app is open and a trade is open. */
 export async function startLiveNotification(accountId: number, canClose: boolean): Promise<void> {
   if (!N || !(await liveNotificationEnabled())) return
+  if ((await SecureStore.getItemAsync(HIDDEN).catch(() => null)) === "1") return  // they hid it for this trade
   try {
     const ids = new Set<number>(JSON.parse((await SecureStore.getItemAsync(ACCOUNTS)) ?? "[]"))
     ids.add(accountId)
@@ -68,6 +70,17 @@ export async function stopLiveNotification(): Promise<void> {
   try { await SecureStore.deleteItemAsync(ACCOUNTS) } catch { /* nothing stored */ }
   stopNow?.()
   try { await N.default.stopForegroundService(); await N.default.cancelNotification(CHANNEL) } catch { /* it was not showing */ }
+}
+
+/** The cross on the notification: remove it now and keep it away until the trades that are open now have closed. */
+export async function hideLiveNotification(): Promise<void> {
+  try { await SecureStore.setItemAsync(HIDDEN, "1") } catch { /* it will simply come back */ }
+  await stopLiveNotification()
+}
+
+/** Called when nothing is open any more: the next trade shows the notification again. */
+export async function clearLiveNotificationHidden(): Promise<void> {
+  try { await SecureStore.deleteItemAsync(HIDDEN) } catch { /* nothing stored */ }
 }
 
 /** What the notification says for the trades open now. */
@@ -95,7 +108,10 @@ async function show(since: number | null, open: LivePosition[], currency: string
       ...(since ? { showTimestamp: true, timestamp: since, showChronometer: true, chronometerDirection: "up" as const } : {}),
       ...(open.length > 1 ? { style: { type: AndroidStyle.INBOX, lines: open.slice(0, 6).map((p) => `${p.side.toUpperCase()} ${p.symbol} · ${money(p.profit)}`) } } : {}),
       pressAction: { id: "open", launchActivity: "default" },
-      actions: canClose && open.length > 0 ? [{ title: "Review and close", pressAction: { id: "review", launchActivity: "default" } }] : [],
+      actions: open.length > 0 ? [
+        { title: "✕  Hide", pressAction: { id: "hide" } },
+        ...(canClose ? [{ title: "Close trade…", pressAction: { id: "review", launchActivity: "default" } }] : []),
+      ] : [],
     },
   })
 }
@@ -137,15 +153,19 @@ if (N) {
   }))
 
   // Taps on the notification are handled by the app when it opens (Gate in app/_layout.tsx); the background handler must still exist or Notifee warns.
-  notifee.onBackgroundEvent(async () => {})
+  notifee.onBackgroundEvent(async ({ type, detail }) => {
+    if (type === N!.EventType.ACTION_PRESS && detail.pressAction?.id === "hide") await hideLiveNotification()  // the cross, pressed with the app closed
+  })
 }
 
-/** Tell the app when the member taps the live notification (or "Review and close"), so it can open the Live trades screen. */
+/** Tell the app when the member taps the live notification (or "Close trade…"), so it can open the Live trades screen. */
 export function onLiveNotificationPress(open: () => void): () => void {
   if (!N) return () => {}
   const { EventType } = N
   const off = N.default.onForegroundEvent(({ type, detail }) => {
-    if ((type === EventType.PRESS || type === EventType.ACTION_PRESS) && detail.notification?.id === CHANNEL) open()
+    if (detail.notification?.id !== CHANNEL) return
+    if (type === EventType.ACTION_PRESS && detail.pressAction?.id === "hide") void hideLiveNotification()  // the cross
+    else if (type === EventType.PRESS || type === EventType.ACTION_PRESS) open()
   })
   void N.default.getInitialNotification().then((n) => { if (n?.notification.id === CHANNEL) open() }).catch(() => {})
   return off

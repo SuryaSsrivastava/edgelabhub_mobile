@@ -2,7 +2,9 @@ import { useEffect, useState } from "react"
 import { Alert, Text, View } from "react-native"
 import { api, type Account, type LivePosition } from "../src/api"
 import { useAuth } from "../src/auth"
+import { CloseX, LiveLine, RangeBar, useProfitHistory } from "../src/livechart"
 import { startLiveNotification } from "../src/liveservice"
+import { CountUp } from "../src/fx"
 import { ago, money, price } from "../src/format"
 import { useLoad } from "../src/hooks"
 import { colors } from "../src/theme"
@@ -24,6 +26,7 @@ export default function Positions() {
   const [gone, setGone] = useState<string[]>([])  // closed a moment ago: hidden until the next look agrees
   const [note, setNote] = useState<string | null>(null)
   const open = (v?.positions ?? []).filter((p) => !gone.includes(p.id))
+  const history = useProfitHistory(open, v?.at)
   useEffect(() => { if (id !== null && v?.state === "live" && open.length > 0) void startLiveNotification(id, canClose) }, [id, v?.state, open.length > 0, canClose])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const close = (items: LivePosition[], title: string, text: string) => Alert.alert(title, text, [
@@ -69,7 +72,7 @@ export default function Positions() {
                   {note ? <ErrorNote>{note}</ErrorNote> : null}
                   {open.length === 0 ? <Empty title="No open positions" text="Nothing is open on this account right now." /> : (
                     <>
-                      {open.map((p) => <PositionCard key={p.id} p={p} currency={v.currency} busy={closing === p.id} onClose={canClose ? () => close([p], `Close this ${p.symbol} ${p.side.toLowerCase()} now?`, `${p.volume ?? ""} lots are closed at the current market price.`) : undefined} />)}
+                      {open.map((p) => <PositionCard key={p.id} p={p} history={history[p.id] ?? [p.profit]} currency={v.currency} busy={closing === p.id} onClose={canClose ? () => close([p], `Close this ${p.symbol} ${p.side.toLowerCase()} now?`, `${p.volume ?? ""} lots are closed at the current market price.`) : undefined} />)}
                       {canClose && open.length > 1 ? <Button tone="danger" disabled={closing !== null} onPress={() => close(open, "Close all open trades?", `${open.length} trades will be closed at the current market price.`)}>Close all ({open.length})</Button> : null}
                     </>
                   )}
@@ -84,7 +87,7 @@ export default function Positions() {
   )
 }
 
-function PositionCard({ p, currency, onClose, busy }: { p: LivePosition; currency?: string; onClose?: () => void; busy?: boolean }) {
+function PositionCard({ p, history, currency, onClose, busy }: { p: LivePosition; history: number[]; currency?: string; onClose?: () => void; busy?: boolean }) {
   const long = p.side === "Long"
   return (
     <Card>
@@ -95,8 +98,13 @@ function PositionCard({ p, currency, onClose, busy }: { p: LivePosition; currenc
             <Text style={{ color: long ? colors.green : colors.red, fontSize: 11, fontWeight: "800" }}>{p.side.toUpperCase()}{p.volume ? ` ${p.volume}` : ""}</Text>
           </View>
         </Row>
-        <Text style={{ color: tone(p.profit), fontSize: 18, fontWeight: "800" }}>{money(p.profit, currency, true)}</Text>
+        <Row style={{ gap: 10 }}>
+          <CountUp value={p.profit} format={(n) => money(n, currency, true)} ms={600} style={{ color: tone(p.profit), fontSize: 18, fontWeight: "800" }} />
+          {onClose ? <CloseX onPress={onClose} busy={busy} /> : null}
+        </Row>
       </Row>
+      <View style={{ marginTop: 8 }}><LiveLine points={history} height={64} /></View>
+      <RangeBar stop={p.stop} target={p.target} open={p.open_price} now={p.price} />
       <Row style={{ justifyContent: "space-between", marginTop: 10 }}>
         <Cell label="Open" value={price(p.open_price)} />
         <Cell label="Now" value={price(p.price)} />
@@ -104,7 +112,6 @@ function PositionCard({ p, currency, onClose, busy }: { p: LivePosition; currenc
         <Cell label="Target" value={p.target ? price(p.target) : "-"} />
       </Row>
       {p.opened_at ? <Muted style={{ marginTop: 8 }}>Opened {ago(p.opened_at)}</Muted> : null}
-      {onClose ? <View style={{ marginTop: 12 }}><Button tone="danger" onPress={onClose} busy={busy}>Close position</Button></View> : null}
     </Card>
   )
 }

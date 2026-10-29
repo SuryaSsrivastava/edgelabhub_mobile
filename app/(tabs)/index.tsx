@@ -1,17 +1,16 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
-import { useState } from "react"
 import { Text, View } from "react-native"
-import { api } from "../../src/api"
+import { api, type Market } from "../../src/api"
 import { useAuth } from "../../src/auth"
-import { Curve, PnlCalendar } from "../../src/charts"
+import { Curve } from "../../src/charts"
 import { CountUp, Press, Pulse, Rise, Stat } from "../../src/fx"
 import { clock, dayLabel, money, until } from "../../src/format"
 import { useLoad } from "../../src/hooks"
 import { LiveTrades } from "../../src/live"
 import { chosenAccounts, inScope, ScopeBar, useScope } from "../../src/scope"
-import { DayTrades } from "../../src/day"
-import { equityPoints, journalStats, pnlByDay } from "../../src/journal"
+import { CountdownRing, GuardRails, SessionClock, Ticker, type TickerItem } from "../../src/homefx"
+import { equityPoints, journalStats } from "../../src/journal"
 import { colors, impactColor, radius } from "../../src/theme"
 import { Brand, Card, Label, Loading, Muted, Row, Screen, tone } from "../../src/ui"
 
@@ -21,10 +20,25 @@ const sgn = (n: number, d = 2) => `${n >= 0 ? "+" : ""}${n.toFixed(d)}`
 export default function Home() {
   const { user } = useAuth()
   const router = useRouter()
-  const [day, setDay] = useState<Date | null>(null)
   const accounts = useLoad(() => api.accounts(), { every: 60_000 })
   const trades = useLoad(() => api.journalTrades(500), { every: 120_000 })
-  const counts = useLoad(() => api.journalShotCounts(), { every: 300_000 })
+  const rules = useLoad(() => api.discipline(), { every: 120_000 })
+  const watch = useLoad(() => api.investWatchlist(), { every: 120_000 })
+  // the tape: the watchlist first (starred), then the biggest names of each market, taken one from each in turn so every market shows up
+  const movers = useLoad(async () => {
+    const markets: Market[] = ["crypto", "us", "nse", "forex"]
+    const per = await Promise.all(markets.map((m) => api.screen(m, { filters: [], sort: null }, 0, m === "forex" ? 4 : 6)
+      .then((r) => r.rows.map((x): TickerItem => ({ key: `${m}:${x.symbol}`, symbol: x.symbol.replace("=X", "").replace(/USDT$/, ""), market: m, price: x.price ?? null, chg: x.chg_1d ?? null })))
+      .catch(() => [] as TickerItem[])))
+    const out: TickerItem[] = []
+    for (let i = 0; i < 6; i++) for (const rows of per) if (rows[i]) out.push(rows[i])
+    return out
+  }, { every: 300_000 })
+  const tape: TickerItem[] = (() => {
+    const mine = (watch.data?.stocks ?? []).map((w): TickerItem => ({ key: `${w.market}:${w.symbol}`, symbol: w.symbol, market: w.market, price: w.price, chg: w.chg_1d, mine: true }))
+    const seen = new Set(mine.map((m) => m.key))
+    return [...mine, ...(movers.data ?? []).filter((m) => !seen.has(m.key))]
+  })()
   const notices = useLoad(() => api.notices(1), { every: 60_000 })
   const next = useLoad(async () => (await api.calendar("high", ["US"])).events.find((e) => +new Date(e.time) > Date.now()) ?? null, { every: 60_000 })
 
@@ -39,7 +53,9 @@ export default function Home() {
   const hour = new Date().getHours()
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
   const unread = notices.data?.unread ?? 0
-  const refresh = () => { void accounts.refresh(); void trades.refresh(); void notices.refresh(); void next.refresh(); void counts.refresh() }
+  const scopes = (rules.data?.scopes ?? []).filter((sc) => sc.meters.length > 0)
+  const meters = scopes.flatMap((sc) => sc.meters.map((m) => ({ ...m, scope: scopes.length > 1 ? sc.scope : undefined }))).slice(0, 5)
+  const refresh = () => { void accounts.refresh(); void trades.refresh(); void notices.refresh(); void next.refresh(); void rules.refresh(); void watch.refresh(); void movers.refresh() }
 
   return (
     <Screen refreshing={accounts.refreshing || trades.refreshing} onRefresh={refresh}>
@@ -57,6 +73,8 @@ export default function Home() {
         <Muted>{greeting}</Muted>
         <Text style={{ color: colors.text, fontSize: 26, fontWeight: "800", letterSpacing: -0.6 }}>{first || "Trader"}</Text>
       </View>
+
+      <Ticker items={tape} />
 
       <ScopeBar trades={every} accounts={list} />
 
@@ -85,37 +103,67 @@ export default function Home() {
 
       {every.length > 0 && all.length === 0 ? <Card><Muted style={{ textAlign: "center" }}>No trades for this selection. Pick another account above.</Muted></Card> : null}
 
-      {all.length > 0 ? (
-        <>
-          <Card delay={200}>
-            <PnlCalendar byDay={pnlByDay(all)} onPick={(d) => setDay(d)} />
-            {!day ? <Muted style={{ textAlign: "center", marginTop: 10 }}>Tap a day to see its trades and screenshots.</Muted> : null}
-          </Card>
-          {day ? <DayTrades day={day} trades={all} counts={counts.data ?? {}} onOpen={(id) => router.push(`/trade/${id}`)} /> : null}
-        </>
+      {meters.length > 0 ? (
+        <Card delay={180}>
+          <Row style={{ justifyContent: "space-between" }}>
+            <Label>Today's guard rails</Label>
+            <Press onPress={() => router.push("/goals")}><Row><Ionicons name="create-outline" size={15} color={colors.green} /><Text style={{ color: colors.green, fontSize: 12, fontWeight: "800", marginLeft: 4 }}>Edit</Text></Row></Press>
+          </Row>
+          <View style={{ marginTop: 8 }}><GuardRails meters={meters} /></View>
+        </Card>
       ) : null}
 
-      <View style={{ height: 12 }} />
+      {rules.loaded && meters.length === 0 ? (
+        <Card delay={180}>
+          <Press onPress={() => router.push("/goals")}>
+            <Row style={{ justifyContent: "space-between" }}>
+              <Row style={{ flex: 1, paddingRight: 10 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${colors.green}1a`, alignItems: "center", justifyContent: "center" }}><Ionicons name="flag-outline" size={20} color={colors.green} /></View>
+                <View style={{ marginLeft: 12, flex: 1 }}>
+                  <Text style={{ color: colors.text, fontSize: 15, fontWeight: "800" }}>Set your goals and limits</Text>
+                  <Muted>A daily loss limit, a profit goal, a trade cap. You will see them here and be alerted.</Muted>
+                </View>
+              </Row>
+              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+            </Row>
+          </Press>
+        </Card>
+      ) : null}
+
       {next.data ? (
-        <Card delay={320}>
+        <Card delay={220}>
           <Press onPress={() => router.push("/calendar")}>
             <Row style={{ justifyContent: "space-between" }}>
               <Label>Next high-impact release</Label>
               <Pulse color={impactColor.high} size={5} />
             </Row>
-            <Row style={{ justifyContent: "space-between" }}>
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={{ color: colors.text, fontSize: 16, fontWeight: "700" }}>{next.data.name}</Text>
+            <Row style={{ gap: 16, marginTop: 4 }}>
+              <CountdownRing time={next.data.time} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 16, fontWeight: "800" }}>{next.data.name}</Text>
                 <Muted style={{ marginTop: 3 }}>{next.data.currency} · {dayLabel(next.data.time)} {clock(next.data.time)}</Muted>
+                {next.data.forecast || next.data.previous ? (
+                  <Row style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                    {next.data.forecast ? <View style={chip}><Text style={{ color: colors.muted, fontSize: 11 }}>Forecast <Text style={{ color: colors.text, fontWeight: "700" }}>{next.data.forecast}</Text></Text></View> : null}
+                    {next.data.previous ? <View style={chip}><Text style={{ color: colors.muted, fontSize: 11 }}>Previous <Text style={{ color: colors.text, fontWeight: "700" }}>{next.data.previous}</Text></Text></View> : null}
+                  </Row>
+                ) : null}
               </View>
-              <Text style={{ color: colors.green, fontSize: 24, fontWeight: "800", letterSpacing: -0.5 }}>{until(next.data.time)}</Text>
             </Row>
           </Press>
         </Card>
       ) : null}
+
+      <Card delay={260}>
+        <Row style={{ justifyContent: "space-between" }}><Label>Market sessions</Label><Ionicons name="globe-outline" size={16} color={colors.muted} /></Row>
+        <View style={{ marginTop: 6 }}><SessionClock /></View>
+      </Card>
+
     </Screen>
   )
 }
+
+const chip = { borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 4 } as const
 
 function Quick({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
   return (

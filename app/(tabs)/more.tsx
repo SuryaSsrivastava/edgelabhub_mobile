@@ -12,6 +12,7 @@ type IconName = React.ComponentProps<typeof Ionicons>["name"]
 const MENU: [IconName, string, string, string][] = [
   ["pulse-outline", "Live trades", "/positions", "Open trades on your accounts, with close"],
   ["notifications-outline", "Alerts", "/alerts", "Trades, releases and rule warnings"],
+  ["flag-outline", "Goals and limits", "/goals", "Daily limits, profit goals and your checklist"],
   ["library-outline", "Strategies", "/strategies", "Saved strategies and backtest results"],
   ["settings-outline", "Settings", "/settings", "Notifications, server and sign out"],
 ]

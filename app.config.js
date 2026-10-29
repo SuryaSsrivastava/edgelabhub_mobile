@@ -3,6 +3,11 @@ const fs = require("fs")
 
 const hasFirebase = fs.existsSync("./google-services.json")
 
+// The site the app talks to. Google sign-in returns to https://<this site>/auth/mobile, and the app claims that address (an Android App Link): the website lists this app's package and
+// signing key in /.well-known/assetlinks.json, which is how Android knows it may open the app straight from it, with no "open the external app?" question.
+let apiHost = "edgelabhub.com"
+try { apiHost = new URL(process.env.EXPO_PUBLIC_API_URL || "https://edgelabhub.com/api/v1").host } catch { /* keep the default */ }
+
 module.exports = {
   expo: {
     name: "EdgeLabHub",
@@ -24,12 +29,13 @@ module.exports = {
       package: "app.edgelabhub.mobile",
       adaptiveIcon: { foregroundImage: "./assets/adaptive-icon.png", backgroundColor: "#0b0e14" },
       permissions: ["POST_NOTIFICATIONS"],
+      intentFilters: [{ action: "VIEW", autoVerify: true, data: [{ scheme: "https", host: apiHost, pathPrefix: "/auth/mobile" }], category: ["BROWSABLE", "DEFAULT"] }],
       ...(hasFirebase ? { googleServicesFile: "./google-services.json" } : {}),
     },
     plugins: [
       "expo-router",
       "expo-secure-store",
-      "./plugins/withLiveService",
+      ...(process.env.LIVE_NOTIFICATION === "1" ? ["./plugins/withLiveService"] : []),  // the live-trades notification: experimental, only in builds that ask for it (profile "live")
       ["expo-notifications", { icon: "./assets/notification-icon.png", color: "#22d38a" }],
     ],
     experiments: { typedRoutes: false },
