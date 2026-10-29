@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { Alert, Switch, Text, View } from "react-native"
 import { api, apiServer } from "../src/api"
 import { useAuth } from "../src/auth"
+import { liveNotificationAvailable, liveNotificationEnabled, setLiveNotificationEnabled } from "../src/liveservice"
 import { registerForPush, unregisterPush } from "../src/push"
 import { colors } from "../src/theme"
 import { Button, Card, ErrorNote, Label, Muted, Row, Screen } from "../src/ui"
@@ -11,6 +12,8 @@ export default function Settings() {
   const { user, signOut } = useAuth()
   const [push, setPush] = useState(true)
   const [promos, setPromos] = useState(true)
+  const [live, setLive] = useState(false)
+  const [liveNote, setLiveNote] = useState<{ ok: boolean; text: string } | null>(null)
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy] = useState<"push" | "test" | null>(null)
 
@@ -34,6 +37,14 @@ export default function Settings() {
     } finally {
       setBusy(null)
     }
+  }
+
+  useEffect(() => { void liveNotificationEnabled().then(setLive) }, [])
+  const toggleLive = async (on: boolean) => {
+    setLiveNote(null)
+    const r = await setLiveNotificationEnabled(on)
+    setLiveNote({ ok: r.ok, text: r.message })
+    if (r.ok) setLive(on)
   }
 
   const togglePromos = async (on: boolean) => {
@@ -85,11 +96,24 @@ export default function Settings() {
         <View style={{ marginTop: 12 }}><Button tone="ghost" onPress={test} busy={busy === "test"}>Send a test notification</Button></View>
       </Card>
 
+      {liveNotificationAvailable() ? (
+        <Card>
+          <Row style={{ justifyContent: "space-between" }}>
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>Live trades in the notification bar</Text>
+              <Muted style={{ marginTop: 3 }}>While a trade is open, one notification stays in your bar with its running profit and a timer. It updates every few seconds, uses some battery, and goes away after the last trade closes.</Muted>
+            </View>
+            <Switch value={live} onValueChange={toggleLive} trackColor={{ true: colors.green, false: colors.border }} thumbColor="#fff" />
+          </Row>
+          {liveNote ? <View style={{ marginTop: 10 }}>{liveNote.ok ? <Muted style={{ color: colors.green }}>{liveNote.text}</Muted> : <ErrorNote>{liveNote.text}</ErrorNote>}</View> : null}
+        </Card>
+      ) : null}
+
       <Card>
         <Label>About</Label>
         <Muted>EdgeLabHub mobile {Constants.expoConfig?.version}</Muted>
         <Muted style={{ marginTop: 2 }}>Server: {apiServer()}</Muted>
-        <Muted style={{ marginTop: 8 }}>This app only reads your trades and positions. It never places or closes an order.</Muted>
+        <Muted style={{ marginTop: 8 }}>The app never opens a broker order. Admins can close an open trade from Live trades, after a confirmation.</Muted>
       </Card>
 
       <Button tone="danger" onPress={out}>Sign out</Button>

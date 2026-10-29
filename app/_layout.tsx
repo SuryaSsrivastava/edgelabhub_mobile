@@ -6,7 +6,9 @@ import { useEffect } from "react"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { api } from "../src/api"
 import { AuthProvider, useAuth } from "../src/auth"
+import { onLiveNotificationPress } from "../src/liveservice"
 import { routeFor } from "../src/push"
+import { ScopeProvider } from "../src/scope"
 import { colors } from "../src/theme"
 
 SplashScreen.preventAutoHideAsync().catch(() => {})
@@ -38,16 +40,28 @@ function Gate() {
     return () => sub.remove()
   }, [user, router])
 
+  // tapping the live-trades notification in the bar opens the Live trades screen
+  useEffect(() => {
+    if (!user) return
+    return onLiveNotificationPress(() => router.push("/positions"))
+  }, [user, router])
+
   if (!ready) return null
   return (
-    <Stack screenOptions={{ headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text, headerShadowVisible: false, contentStyle: { backgroundColor: colors.bg } }}>
+    <Stack screenOptions={{ animation: "slide_from_right", headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text, headerShadowVisible: false, contentStyle: { backgroundColor: colors.bg } }}>
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="forward/[id]" options={{ title: "Forward test" }} />
+      <Stack.Screen name="profile" options={{ title: "Profile" }} />
       <Stack.Screen name="settings" options={{ title: "Settings" }} />
-      <Stack.Screen name="journal/index" options={{ title: "Journal" }} />
-      <Stack.Screen name="journal/new" options={{ title: "Log a trade" }} />
-      <Stack.Screen name="journal/[id]" options={{ title: "Trade" }} />
+      <Stack.Screen name="alerts" options={{ title: "Alerts" }} />
+      <Stack.Screen name="positions" options={{ title: "Live trades" }} />
+      <Stack.Screen name="calendar" options={{ title: "Calendar" }} />
+      <Stack.Screen name="trade/new" options={{ title: "Log a trade", presentation: "modal", animation: "slide_from_bottom" }} />
+      <Stack.Screen name="trade/[id]" options={{ title: "Trade" }} />
+      <Stack.Screen name="asset/[market]/[symbol]" options={{ title: "" }} />
+      <Stack.Screen name="strategies" options={{ title: "Strategies" }} />
+      <Stack.Screen name="strategy/[id]" options={{ title: "Strategy" }} />
     </Stack>
   )
 }
@@ -57,7 +71,7 @@ export default function Root() {
     <SafeAreaProvider>
       <AuthProvider>
         <StatusBar style="light" />
-        <Gate />
+        <ScopeProvider><Gate /></ScopeProvider>
       </AuthProvider>
     </SafeAreaProvider>
   )

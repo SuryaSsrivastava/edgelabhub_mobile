@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react"
-import { Text, View } from "react-native"
-import { api, type Account, type LivePosition } from "../../src/api"
-import { ago, money, price } from "../../src/format"
-import { useLoad } from "../../src/hooks"
-import { colors } from "../../src/theme"
-import { Card, Empty, ErrorNote, Label, Loading, Muted, Pill, Row, Screen, Title, tone } from "../../src/ui"
+import { Alert, Text, View } from "react-native"
+import { api, type Account, type LivePosition } from "../src/api"
+import { useAuth } from "../src/auth"
+import { startLiveNotification } from "../src/liveservice"
+import { ago, money, price } from "../src/format"
+import { useLoad } from "../src/hooks"
+import { colors } from "../src/theme"
+import { Button, Card, Empty, ErrorNote, Label, Loading, Muted, Pill, Row, Screen, Title, tone } from "../src/ui"
 
-/** Live open positions of a connected MetaTrader account, refreshed every few seconds while this screen is open. Read only. */
+/** Live open positions of a connected MetaTrader account, refreshed every few seconds while this screen is open. Admins can close a trade here, as on the website (the server refuses anyone else). */
 export default function Positions() {
   const accounts = useLoad(() => api.accounts())
   const usable: Account[] = (accounts.data?.accounts ?? []).filter((a) => a.kind === "metaapi" || a.kind === "webhook")
@@ -15,10 +17,34 @@ export default function Positions() {
   const id = picked
   const live = useLoad(() => (id === null ? Promise.resolve(null) : api.accountLive(id)), { every: 5000, deps: [id] })
   const v = live.data
+  const { user } = useAuth()
+  const acct = usable.find((a) => a.id === id)
+  const canClose = !!user?.is_admin && acct?.kind === "metaapi" && !acct.is_prop  // the server's own rule for trading live
+  const [closing, setClosing] = useState<string | null>(null)
+  const [gone, setGone] = useState<string[]>([])  // closed a moment ago: hidden until the next look agrees
+  const [note, setNote] = useState<string | null>(null)
+  const open = (v?.positions ?? []).filter((p) => !gone.includes(p.id))
+  useEffect(() => { if (id !== null && v?.state === "live" && open.length > 0) void startLiveNotification(id, canClose) }, [id, v?.state, open.length > 0, canClose])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const close = (items: LivePosition[], title: string, text: string) => Alert.alert(title, text, [
+    { text: "Cancel", style: "cancel" },
+    { text: items.length > 1 ? "Close them" : "Close position", style: "destructive", onPress: async () => {
+      if (id === null) return
+      setNote(null)
+      const failed: string[] = []
+      for (const p of items) {
+        setClosing(p.id)
+        try { await api.closePosition(id, p.id); setGone((g) => [...g, p.id]) } catch (e) { failed.push(`${p.symbol}: ${e instanceof Error ? e.message : "could not close it"}`) }
+      }
+      setClosing(null)
+      if (failed.length) setNote(failed.join(" · "))
+      void live.refresh()
+    } },
+  ])
 
   return (
-    <Screen refreshing={live.refreshing} onRefresh={live.refresh}>
-      <Title sub="Updates every few seconds while you are on this screen">Positions</Title>
+    <Screen refreshing={live.refreshing} onRefresh={live.refresh} padTop={false}>
+      <Title sub="Updates every few seconds while you are on this screen">Live trades</Title>
       {accounts.error ? <ErrorNote>{accounts.error}</ErrorNote> : null}
       {usable.length > 1 ? (
         <Row style={{ flexWrap: "wrap" }}>{usable.map((a) => <Pill key={a.id} active={a.id === picked} onPress={() => setPicked(a.id)}>{a.name}</Pill>)}</Row>
@@ -40,7 +66,13 @@ export default function Positions() {
                     </Row>
                     <Muted style={{ marginTop: 6 }}>Balance {money(v.balance, v.currency)}{v.at ? ` · updated ${ago(v.at)}` : ""}</Muted>
                   </Card>
-                  {(v.positions ?? []).length === 0 ? <Empty title="No open positions" text="Nothing is open on this account right now." /> : (v.positions ?? []).map((p) => <PositionCard key={p.id} p={p} currency={v.currency} />)}
+                  {note ? <ErrorNote>{note}</ErrorNote> : null}
+                  {open.length === 0 ? <Empty title="No open positions" text="Nothing is open on this account right now." /> : (
+                    <>
+                      {open.map((p) => <PositionCard key={p.id} p={p} currency={v.currency} busy={closing === p.id} onClose={canClose ? () => close([p], `Close this ${p.symbol} ${p.side.toLowerCase()} now?`, `${p.volume ?? ""} lots are closed at the current market price.`) : undefined} />)}
+                      {canClose && open.length > 1 ? <Button tone="danger" disabled={closing !== null} onPress={() => close(open, "Close all open trades?", `${open.length} trades will be closed at the current market price.`)}>Close all ({open.length})</Button> : null}
+                    </>
+                  )}
                 </>
               ) : null}
             </>
@@ -52,7 +84,7 @@ export default function Positions() {
   )
 }
 
-function PositionCard({ p, currency }: { p: LivePosition; currency?: string }) {
+function PositionCard({ p, currency, onClose, busy }: { p: LivePosition; currency?: string; onClose?: () => void; busy?: boolean }) {
   const long = p.side === "Long"
   return (
     <Card>
@@ -72,6 +104,7 @@ function PositionCard({ p, currency }: { p: LivePosition; currency?: string }) {
         <Cell label="Target" value={p.target ? price(p.target) : "-"} />
       </Row>
       {p.opened_at ? <Muted style={{ marginTop: 8 }}>Opened {ago(p.opened_at)}</Muted> : null}
+      {onClose ? <View style={{ marginTop: 12 }}><Button tone="danger" onPress={onClose} busy={busy}>Close position</Button></View> : null}
     </Card>
   )
 }

@@ -13,28 +13,31 @@ export function TabBar({ state, descriptors, navigateToTab }: BarProps) {
   const insets = useSafeAreaInsets()
   const [w, setW] = useState(0)
   const x = useRef(new Animated.Value(0)).current
-  const n = state.routes.length
+  // routes with href: null are reachable (links, pushes, buttons) but have no place in the bar
+  const shown = state.routes.filter((r) => (descriptors[r.key].options as { href?: unknown }).href !== null)
+  const n = shown.length
   const slot = w / n
+  const at = shown.findIndex((r) => r.key === state.routes[state.index].key)  // -1 while a hidden screen is open
 
   useEffect(() => {
-    if (!w) return
-    Animated.spring(x, { toValue: state.index * slot, useNativeDriver: true, speed: 14, bounciness: 9 }).start()
-  }, [state.index, slot, w, x])
+    if (!w || at < 0) return
+    Animated.spring(x, { toValue: at * slot, useNativeDriver: true, speed: 14, bounciness: 9 }).start()
+  }, [at, slot, w, x])
 
   return (
     <View style={{ backgroundColor: `${colors.bg}f2`, borderTopWidth: 1, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, Platform.OS === "android" ? 8 : 0) }}>
       <LinearGradient colors={[`${colors.green}55`, "transparent"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1 }} />
       <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ flexDirection: "row", paddingTop: 6 }}>
-        {w > 0 ? (
+        {w > 0 && at >= 0 ? (
           <Animated.View pointerEvents="none" style={{ position: "absolute", top: 6, left: 0, width: slot, height: 50, alignItems: "center", transform: [{ translateX: x }] }}>
             <View style={{ width: slot - 18, height: 48, borderRadius: 16, overflow: "hidden", borderWidth: 1, borderColor: `${colors.green}44` }}>
               <LinearGradient colors={[`${colors.green}30`, `${colors.green}08`]} style={{ flex: 1 }} />
             </View>
           </Animated.View>
         ) : null}
-        {state.routes.map((route, i) => {
+        {shown.map((route) => {
           const { options } = descriptors[route.key]
-          const focused = state.index === i
+          const focused = state.routes[state.index].key === route.key
           const color = focused ? colors.green : colors.muted
           const badge = options.tabBarBadge
           return (

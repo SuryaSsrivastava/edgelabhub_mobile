@@ -2,7 +2,7 @@
 
 The EdgeLabHub phone app for Android and iOS (React Native with Expo). It is a separate project: it talks to your existing EdgeLabHub server through the normal API and keeps no data of its own.
 
-**What it does:** sign in with your EdgeLabHub account; push notifications (trades your forward tests open, economic releases you follow, rule warnings); live open positions of your MetaTrader account; the economic calendar with a bell to follow events; forward test results; settings. It only reads: it never places or closes an order.
+**What it does:** sign in with your EdgeLabHub account; push notifications (trades your forward tests open, economic releases you follow, rule warnings); live open positions of your MetaTrader account; the economic calendar with a bell to follow events; forward test results; settings. It never opens a broker order. It writes your journal entries (log, edit, delete), and on the Live trades screen an admin can close an open trade, which asks for confirmation first, the same as on the website.
 
 ## 1. Run it on your phone while you develop
 

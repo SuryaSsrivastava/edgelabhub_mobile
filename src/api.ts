@@ -1,9 +1,13 @@
+import * as Crypto from "expo-crypto"
+import * as Linking from "expo-linking"
 import * as SecureStore from "expo-secure-store"
+import * as WebBrowser from "expo-web-browser"
 import { DEFAULT_API_URL } from "./config"
 
 // ---- types: the parts of the EdgeLabHub API this app reads --------------------------------------------------------------------------------------------------------------------
 
-export type User = { id: number; email: string; name: string; timezone: string; plan: string; is_admin: boolean }
+export type User = { id: number; email: string; name: string; timezone: string; plan: string; is_admin: boolean; plan_expires_at?: string | null; has_password?: boolean; has_google?: boolean; created_at?: string | null }
+export type PlanUsage = { plan: string; lapsed: boolean; limits: Record<string, number | null>; used: Record<string, number>; resets_on: string | null; ends_on: string | null }
 export type Notice = { id: number; kind: string; title: string; body: string; link: string; read: boolean; created_at: string }
 export type Account = {
   id: number; name: string; kind: string; broker?: string | null; server?: string | null; is_prop: boolean; status: "active" | "connecting" | "error" | "paused"
@@ -29,6 +33,17 @@ export type JournalTrade = {
 }
 export type NewTrade = { symbol: string; side: "Long" | "Short"; entry: number; exit: number; qty: number; risk: number; setup?: string; rating?: number; note?: string; emotions?: string[]; tags?: string[]; followed_plan?: boolean | null }
 export type TradeEdit = { note?: string; rating?: number; setup?: string; emotions?: string[]; tags?: string[]; followed_plan?: boolean | null }
+export type Market = "nse" | "us" | "crypto" | "forex"
+export type ScreenRow = { symbol: string; name: string; sector: string; market: string; price?: number | null; chg_1d?: number | null; ret_1y?: number | null; market_cap?: number | null; pe?: number | null; roe?: number | null; div_yield?: number | null; volume_24h?: number | null; [k: string]: unknown }
+export type ScreenResult = { total: number; matched: number; updated_at: string | null; rows: ScreenRow[] }
+export type ScreenSpec = { filters: { field: string; op: string; value: number | string }[]; sort?: { field: string; dir: "asc" | "desc" } | null; search?: string; limit?: number | null }
+export type AssetDetail = { symbol: string; name: string; sector: string; industry: string; market: Market; metrics: Record<string, number | null>; history: [number, number][]; about: string; website: string; facts: Record<string, unknown>; peers: { symbol: string; name: string; price: number | null; pe: number | null; ret_1y: number | null }[] }
+export type BacktestStats = { trades: number; win_rate?: number; expectancy_r?: number; total_r?: number; profit_factor?: number | null; max_drawdown_pct?: number; max_drawdown_r?: number; return_pct?: number; avg_win_r?: number; avg_loss_r?: number; sqn?: number | null; backtest_id?: number }
+export type StrategyRow = { s: { id: number; name: string; description: string; version: number; updated_at: string; shared_by?: string | null }; stats: BacktestStats | null; symbol: string | null; provider: string; runs: number }
+export type BacktestTrade = { id: number; symbol: string; side: string; entry_at: string; exit_at: string; entry: number; exit: number; r_multiple: number; exit_reason: string; session: string }
+export type ManualShot = { id: number; trade_id: number; caption: string; thumb: string; created_at: string }
+export type ReplayShot = { id: number; session_id: number; trade_id: number | null; caption: string; thumb: string; created_at: string }
+export type BrokerInfo = { id: "dhan" | "fyers" | "angel"; label: string; fields: { key: string; label: string; secret: boolean }[]; help: string; login: boolean; oauth: boolean }
 export type Prefs = { push: boolean; promos?: boolean; [k: string]: unknown }
 
 // ---- the connection -----------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -42,6 +57,9 @@ let onUnauthorized: () => void = () => {}
 
 export const setUnauthorizedHandler = (fn: () => void) => { onUnauthorized = fn }
 export const apiServer = () => server
+/** The address EdgeLabHub itself answers on (no path), so a link can be checked to be ours before the sign-in token is sent along with it. */
+export const apiOrigin = () => { try { return new URL(server).origin } catch { return "" } }
+export const authHeader = (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {})
 
 export async function restoreSession(): Promise<boolean> {
   try {
@@ -90,15 +108,46 @@ async function request<T>(path: string, init: RequestInit = {}, auth = true): Pr
   return (await res.json()) as T
 }
 
-export async function login(email: string, password: string): Promise<User> {
-  const r = await request<{ user: User; access_token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ email: email.trim(), password }) }, false)
+async function startSession(r: { user: User; access_token: string }): Promise<User> {
   token = r.access_token
   await SecureStore.setItemAsync(TOKEN_KEY, token)
   return r.user
 }
 
+export async function login(email: string, password: string): Promise<User> {
+  return startSession(await request<{ user: User; access_token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ email: email.trim(), password }) }, false))
+}
+
+const b64url = (b64: string) => b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+const GOOGLE_ERRORS: Record<string, string> = {
+  google_denied: "Google sign-in was cancelled.",
+  google_state: "That Google sign-in did not match this phone. Try again.",
+  google_failed: "Google could not complete the sign-in. Try again.",
+  google_unverified: "Your Google email address is not verified.",
+  google_not_configured: "Google sign-in is not set up on the server yet.",
+  disabled: "This account is disabled.",
+}
+
+/**
+ * Sign in with Google in the phone's secure browser sheet. The app keeps a secret and gives the server only its hash; the server answers with a one-time code in the app's own address
+ * (edgelabhub://auth), and the code plus the secret are traded for a normal session. Returns null when the person closes the sheet.
+ */
+export async function googleSignIn(): Promise<User | null> {
+  const verifier = b64url(btoa(String.fromCharCode(...Crypto.getRandomBytes(32))))  // 43 characters
+  const challenge = b64url(await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, verifier, { encoding: Crypto.CryptoEncoding.BASE64 }))
+  const result = await WebBrowser.openAuthSessionAsync(`${server}/auth/google/login?mobile_challenge=${challenge}`, "edgelabhub://auth")
+  if (result.type !== "success") return null
+  const q = Linking.parse(result.url).queryParams ?? {}
+  if (typeof q.error === "string") throw new ApiError(400, GOOGLE_ERRORS[q.error] ?? "Google sign-in did not work. Try again.")
+  if (typeof q.code !== "string") throw new ApiError(400, "Google sign-in did not finish. Try again.")
+  return startSession(await request<{ user: User; access_token: string }>("/auth/google/mobile", { method: "POST", body: JSON.stringify({ code: q.code, verifier }) }, false))
+}
+
 export const api = {
   me: () => request<User>("/auth/me"),
+  updateProfile: (b: { name?: string; timezone?: string }) => request<User>("/auth/me", { method: "PATCH", body: JSON.stringify(b) }),
+  changePassword: (current: string | null, next: string) => request<void>("/auth/password", { method: "POST", body: JSON.stringify({ current_password: current, new_password: next }) }),
+  planUsage: () => request<PlanUsage>("/plans/usage"),
   notices: (limit = 40) => request<{ items: Notice[]; unread: number }>(`/notifications?limit=${limit}`),
   readNotice: (id: number) => request<void>(`/notifications/${id}/read`, { method: "POST" }),
   readAll: () => request<void>("/notifications/read-all", { method: "POST" }),
@@ -109,11 +158,15 @@ export const api = {
   unregisterDevice: (tokenValue: string) => request<void>(`/notifications/devices?token=${encodeURIComponent(tokenValue)}`, { method: "DELETE" }),
   testPush: () => request<void>("/notifications/devices/test", { method: "POST" }),
   accounts: () => request<{ accounts: Account[] }>("/accounts"),
+  closePosition: (accountId: number, positionId: string) => request<{ closed: boolean }>(`/accounts/${accountId}/positions/${encodeURIComponent(positionId)}/close`, { method: "POST" }),
   accountLive: (id: number) => request<LiveView>(`/accounts/${id}/live`),
   forwardTests: () => request<Forward[]>("/forward"),
   forwardTest: (id: number) => request<ForwardFull>(`/forward/${id}`),
   calendar: (importance: string, countries: string[]) =>
     request<{ events: EconEvent[]; available: boolean }>(`/market/economic-calendar?importance=${importance}&countries=${encodeURIComponent(countries.join(","))}&back=1&ahead=7`),
+  investBrokers: () => request<{ brokers: BrokerInfo[] }>("/invest/brokers"),
+  connectBroker: (broker: string, name: string, credentials: Record<string, string>) => request<BrokerLink>("/invest/links", { method: "POST", body: JSON.stringify({ broker, name, credentials }) }),
+  startBrokerLogin: (linkId: number) => request<{ url: string }>(`/invest/links/${linkId}/login`, { method: "POST" }),
   investLinks: () => request<{ links: BrokerLink[] }>("/invest/links"),
   investPortfolio: (linkId?: number, fresh?: boolean) => request<Portfolio>(`/invest/portfolio?${linkId ? `link_id=${linkId}&` : ""}${fresh ? "refresh=true" : ""}`),
   investWatchlist: () => request<{ stocks: WatchStock[] }>("/invest/screened"),
@@ -123,6 +176,15 @@ export const api = {
   addJournalTrade: (b: NewTrade) => request<JournalTrade>("/journal/trades", { method: "POST", body: JSON.stringify(b) }),
   editJournalTrade: (id: number, b: TradeEdit) => request<JournalTrade>(`/journal/trades/${id}`, { method: "PATCH", body: JSON.stringify(b) }),
   deleteJournalTrade: (id: number) => request<void>(`/journal/trades/${id}`, { method: "DELETE" }),
+  screen: (market: Market, spec: ScreenSpec, offset = 0, page = 50) => request<ScreenResult>("/screener/query", { method: "POST", body: JSON.stringify({ market, spec, offset, page }) }),
+  asset: (market: string, symbol: string) => request<AssetDetail>(`/screener/${market}/${encodeURIComponent(symbol)}`),
+  strategies: (limit = 30) => request<StrategyRow[]>(`/strategies/overview?limit=${limit}&skip_forward=true`),
+  backtestTrades: (id: number) => request<BacktestTrade[]>(`/backtests/${id}/trades`),
+  journalShotCounts: () => request<Record<string, number>>("/journal/screenshot-counts"),
+  tradeShots: (id: number) => request<ManualShot[]>(`/journal/trades/${id}/shots`),
+  tradeShotImage: (id: number) => request<{ image: string }>(`/journal/shots/${id}/image`),
+  journalTradeShots: (id: number) => request<ReplayShot[]>(`/journal/trades/${id}/screenshots`),
+  replayShotImage: (id: number) => request<{ image: string }>(`/replay/screenshots/${id}/image`),
   newsAlerts: () => request<NewsAlerts>("/notifications/news-alerts"),
   saveNewsAlerts: (b: NewsAlerts) => request<NewsAlerts>("/notifications/news-alerts", { method: "PUT", body: JSON.stringify(b) }),
 }

@@ -1,216 +1,131 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
-import { useEffect, useState } from "react"
-import { ScrollView, Text, View } from "react-native"
-import { api, type Account, type Forward } from "../../src/api"
+import { useState } from "react"
+import { Text, View } from "react-native"
+import { api } from "../../src/api"
 import { useAuth } from "../../src/auth"
-import { Bar, CountUp, Hero, Press, Pulse, Rise, RisingWords, Stat } from "../../src/fx"
-import { ago, clock, dayLabel, money, until } from "../../src/format"
+import { Curve, PnlCalendar } from "../../src/charts"
+import { CountUp, Press, Pulse, Rise, Stat } from "../../src/fx"
+import { clock, dayLabel, money, until } from "../../src/format"
 import { useLoad } from "../../src/hooks"
+import { LiveTrades } from "../../src/live"
+import { chosenAccounts, inScope, ScopeBar, useScope } from "../../src/scope"
+import { DayTrades } from "../../src/day"
+import { equityPoints, journalStats, pnlByDay } from "../../src/journal"
 import { colors, impactColor, radius } from "../../src/theme"
-import { Card, Empty, ErrorNote, Label, Loading, Muted, Row, Screen, tone } from "../../src/ui"
+import { Brand, Card, Label, Loading, Muted, Row, Screen, tone } from "../../src/ui"
 
-const signed = (n: number, d = 2) => `${n >= 0 ? "+" : ""}${n.toFixed(d)}`
-const statusColor = (s: Account["status"]) => (s === "active" ? colors.green : s === "error" ? colors.red : colors.amber)
-const chip = { borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 10, paddingVertical: 4 } as const
-
-/** A clock that ticks, so the countdown to the next release stays right while the screen is open. */
-function useNow(ms = 30_000) {
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), ms); return () => clearInterval(t) }, [ms])
-  return now
-}
+type IconName = React.ComponentProps<typeof Ionicons>["name"]
+const sgn = (n: number, d = 2) => `${n >= 0 ? "+" : ""}${n.toFixed(d)}`
 
 export default function Home() {
   const { user } = useAuth()
   const router = useRouter()
-  useNow()
+  const [day, setDay] = useState<Date | null>(null)
   const accounts = useLoad(() => api.accounts(), { every: 60_000 })
-  const next = useLoad(async () => {
-    const r = await api.calendar("high", ["US"])
-    return r.events.find((e) => +new Date(e.time) > Date.now()) ?? null
-  }, { every: 60_000 })
-  const forward = useLoad(() => api.forwardTests(), { every: 120_000 })
-  const notices = useLoad(() => api.notices(3), { every: 60_000 })
-  const invest = useLoad(() => api.investPortfolio(), { every: 300_000 })
+  const trades = useLoad(() => api.journalTrades(500), { every: 120_000 })
+  const counts = useLoad(() => api.journalShotCounts(), { every: 300_000 })
+  const notices = useLoad(() => api.notices(1), { every: 60_000 })
+  const next = useLoad(async () => (await api.calendar("high", ["US"])).events.find((e) => +new Date(e.time) > Date.now()) ?? null, { every: 60_000 })
 
   const list = accounts.data?.accounts ?? []
-  const withMoney = list.filter((a) => a.prop)
-  const today = list.reduce((sum, a) => sum + (a.prop?.today ?? 0), 0)
-  const balance = withMoney.reduce((sum, a) => sum + (a.prop?.balance ?? 0), 0)
-  const equity = withMoney.reduce((sum, a) => sum + (a.prop?.equity ?? 0), 0)
-  const floating = equity - balance
-
-  const running = (forward.data ?? []).filter((f) => f.status === "active")
-  const totalR = running.reduce((sum, f) => sum + (f.stats?.totalR ?? 0), 0)
-  const trades = running.reduce((sum, f) => sum + (f.stats?.n ?? 0), 0)
-  const wins = running.reduce((sum, f) => sum + (f.stats?.wins ?? 0), 0)
-  const winRate = trades > 0 ? (wins / trades) * 100 : null
-
-  const refreshing = accounts.refreshing || next.refreshing || forward.refreshing || notices.refreshing
-  const refresh = () => { void accounts.refresh(); void next.refresh(); void forward.refresh(); void notices.refresh() }
+  const { mode, filter } = useScope()
+  const every = trades.data ?? []
+  const all = every.filter((t) => inScope(t, mode, filter))  // everything below follows the chosen accounts
+  const st = journalStats(all)
+  const picked = mode !== "real" || filter.length > 0
+  const today = picked ? st.today : list.reduce((sum, a) => sum + (a.prop?.today ?? 0), 0) || st.today
   const first = (user?.name || user?.email || "").split(/[ @]/)[0]
   const hour = new Date().getHours()
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
   const unread = notices.data?.unread ?? 0
-  const big = { fontSize: 19, fontWeight: "800" } as const
+  const refresh = () => { void accounts.refresh(); void trades.refresh(); void notices.refresh(); void next.refresh(); void counts.refresh() }
 
   return (
-    <Screen refreshing={refreshing} onRefresh={refresh}>
-      <Rise>
-        <Hero>
-          <Row style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-            <View style={{ flex: 1, paddingRight: 10 }}>
-              <Text style={{ color: colors.green, fontSize: 11, fontWeight: "700", letterSpacing: 2.4, textTransform: "uppercase" }}>EdgeLabHub{user?.plan ? ` · ${user.plan}` : ""}</Text>
-              <RisingWords text={`${greeting}${first ? `, ${first}` : ""}`} delay={150} style={{ color: colors.text, fontSize: 27, fontWeight: "800", letterSpacing: -0.6, marginTop: 6 }} />
-              <Muted style={{ marginTop: 2 }}>{new Date().toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" })}</Muted>
-            </View>
-            <Press onPress={() => router.push("/settings")}>
-              <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: `${colors.bg}99`, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name="settings-outline" size={20} color={colors.text} />
-              </View>
-            </Press>
-          </Row>
+    <Screen refreshing={accounts.refreshing || trades.refreshing} onRefresh={refresh}>
+      <Row style={{ justifyContent: "space-between", marginBottom: 12 }}>
+        <Brand size={38} />
+        <Press onPress={() => router.push("/alerts")}>
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="notifications-outline" size={21} color={colors.text} />
+            {unread > 0 ? <View style={{ position: "absolute", top: 7, right: 7, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: colors.red, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 }}><Text style={{ color: "#fff", fontSize: 9.5, fontWeight: "800" }}>{unread > 9 ? "9+" : unread}</Text></View> : null}
+          </View>
+        </Press>
+      </Row>
 
-          <Text style={{ color: colors.muted, fontSize: 10, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase", marginTop: 16 }}>Today, all accounts</Text>
-          {!accounts.loaded ? <Loading /> : (
-            <CountUp value={today} format={(n) => money(n, "USD", true)} style={{ color: tone(today), fontSize: 40, fontWeight: "800", letterSpacing: -1.2, marginTop: 2 }} />
-          )}
-          <Muted>{list.length} account{list.length === 1 ? "" : "s"} · closed trades only</Muted>
+      <View style={{ marginBottom: 14 }}>
+        <Muted>{greeting}</Muted>
+        <Text style={{ color: colors.text, fontSize: 26, fontWeight: "800", letterSpacing: -0.6 }}>{first || "Trader"}</Text>
+      </View>
 
-          {accounts.loaded && withMoney.length > 0 ? (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
-              <Stat label="Balance"><CountUp value={balance} format={(n) => money(n)} style={[big, { color: colors.text }]} /></Stat>
-              <Stat label="Equity"><CountUp value={equity} format={(n) => money(n)} style={[big, { color: colors.text }]} /></Stat>
-              <Stat label="Floating"><CountUp value={floating} format={(n) => money(n, "USD", true)} style={[big, { color: tone(floating) }]} /></Stat>
-              <Stat label="Forward R"><CountUp value={totalR} format={(n) => `${signed(n)}R`} style={[big, { color: tone(totalR) }]} /></Stat>
-            </View>
-          ) : null}
-        </Hero>
+      <ScopeBar trades={every} accounts={list} />
+
+      <Card>
+        <Muted>{picked ? "Today · selected accounts" : "Today"}</Muted>
+        {!accounts.loaded && !trades.loaded ? <Loading /> : <CountUp value={today} format={(n) => money(n, "USD", true)} style={{ color: tone(today), fontSize: 38, fontWeight: "800", letterSpacing: -1.2 }} />}
+        <View style={{ marginTop: 10 }}>{all.length > 1 ? <Curve points={equityPoints(all)} height={100} /> : <Muted>Your equity curve appears after your first trades.</Muted>}</View>
+        {all.length > 0 ? <Row style={{ justifyContent: "space-between", marginTop: 6 }}><Muted>All time</Muted><Text style={{ color: tone(st.net), fontSize: 13, fontWeight: "800" }}>{money(st.net, "USD", true)}</Text></Row> : null}
+      </Card>
+
+      <LiveTrades accounts={chosenAccounts(list, mode, filter)} />
+
+      <Rise delay={120}>
+        <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
+          <Stat min="28%" label="Win rate">{all.length ? `${st.winRate.toFixed(0)}%` : "-"}</Stat>
+          <Stat min="28%" label="Avg R" tint={tone(st.avgR)}>{all.length ? `${sgn(st.avgR)}R` : "-"}</Stat>
+          <Stat min="28%" label="Trades">{String(st.count)}</Stat>
+        </View>
+        <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+          <Quick icon="add-circle-outline" label="Log trade" onPress={() => router.push("/trade/new")} />
+          <Quick icon="pulse-outline" label="Live trades" onPress={() => router.push("/positions")} />
+          <Quick icon="search-outline" label="Markets" onPress={() => router.push("/markets")} />
+          <Quick icon="calendar-outline" label="Calendar" onPress={() => router.push("/calendar")} />
+        </View>
       </Rise>
 
-      {accounts.error ? <ErrorNote>{accounts.error}</ErrorNote> : null}
+      {every.length > 0 && all.length === 0 ? <Card><Muted style={{ textAlign: "center" }}>No trades for this selection. Pick another account above.</Muted></Card> : null}
 
-      {list.length > 0 ? (
-        <Rise delay={200} style={{ marginTop: 14, marginBottom: 4 }}>
-          <Label>Accounts</Label>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}>
-            {list.map((a) => (
-              <Press key={a.id} onPress={() => router.push("/positions")} style={{ width: 188, backgroundColor: `${colors.card}d9`, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 14 }}>
-                <Row style={{ justifyContent: "space-between" }}>
-                  <Text numberOfLines={1} style={{ color: colors.text, fontSize: 14, fontWeight: "700", flex: 1, paddingRight: 6 }}>{a.name}</Text>
-                  {a.status === "active" ? <Pulse color={statusColor(a.status)} size={6} /> : <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: statusColor(a.status) }} />}
-                </Row>
-                <Muted style={{ marginTop: 1 }}>{[a.broker, a.is_prop ? "Prop" : a.kind].filter(Boolean).join(" · ")}</Muted>
-                {a.prop ? (
-                  <>
-                    <Text style={{ color: colors.text, fontSize: 19, fontWeight: "800", marginTop: 10, letterSpacing: -0.4 }}>{money(a.prop.equity)}</Text>
-                    <Text style={{ color: tone(a.prop.today), fontSize: 12, fontWeight: "700", marginTop: 1 }}>{money(a.prop.today, "USD", true)} today</Text>
-                  </>
-                ) : <Muted style={{ marginTop: 14 }}>{a.status === "active" ? "Connected" : a.hint || a.status}</Muted>}
-              </Press>
-            ))}
-          </ScrollView>
-        </Rise>
+      {all.length > 0 ? (
+        <>
+          <Card delay={200}>
+            <PnlCalendar byDay={pnlByDay(all)} onPick={(d) => setDay(d)} />
+            {!day ? <Muted style={{ textAlign: "center", marginTop: 10 }}>Tap a day to see its trades and screenshots.</Muted> : null}
+          </Card>
+          {day ? <DayTrades day={day} trades={all} counts={counts.data ?? {}} onOpen={(id) => router.push(`/trade/${id}`)} /> : null}
+        </>
       ) : null}
 
       <View style={{ height: 12 }} />
-
-      {invest.data && invest.data.totals.count > 0 ? (
-        <Card delay={240}>
-          <Press onPress={() => router.push("/invest")}>
+      {next.data ? (
+        <Card delay={320}>
+          <Press onPress={() => router.push("/calendar")}>
             <Row style={{ justifyContent: "space-between" }}>
-              <Label>Investments</Label>
-              <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+              <Label>Next high-impact release</Label>
+              <Pulse color={impactColor.high} size={5} />
             </Row>
-            <Row style={{ justifyContent: "space-between", alignItems: "flex-end" }}>
-              <CountUp value={invest.data.totals.value} format={(n) => money(n, "INR")} style={{ color: colors.text, fontSize: 24, fontWeight: "800", letterSpacing: -0.6 }} />
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={{ color: tone(invest.data.totals.day_pnl), fontSize: 13, fontWeight: "800" }}>{money(invest.data.totals.day_pnl, "INR", true)} today</Text>
-                <Muted>{invest.data.totals.count} holdings · {invest.data.totals.pnl >= 0 ? "+" : ""}{(invest.data.totals.pnl_pct ?? 0).toFixed(1)}% overall</Muted>
+            <Row style={{ justifyContent: "space-between" }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={{ color: colors.text, fontSize: 16, fontWeight: "700" }}>{next.data.name}</Text>
+                <Muted style={{ marginTop: 3 }}>{next.data.currency} · {dayLabel(next.data.time)} {clock(next.data.time)}</Muted>
               </View>
+              <Text style={{ color: colors.green, fontSize: 24, fontWeight: "800", letterSpacing: -0.5 }}>{until(next.data.time)}</Text>
             </Row>
           </Press>
         </Card>
       ) : null}
-
-      <Card delay={280}>
-        <Row style={{ justifyContent: "space-between" }}>
-          <Label>Next high-impact release</Label>
-          <Pulse color={impactColor.high} size={5} />
-        </Row>
-        {!next.loaded ? <Loading /> : next.data ? (
-          <Press onPress={() => router.push("/calendar")}>
-            <Row style={{ justifyContent: "space-between" }}>
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={{ color: colors.text, fontSize: 16, fontWeight: "700" }}>{next.data.name}</Text>
-                <Muted style={{ marginTop: 4 }}>{next.data.currency} · {dayLabel(next.data.time)} {clock(next.data.time)}</Muted>
-              </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={{ color: colors.green, fontSize: 24, fontWeight: "800", letterSpacing: -0.5 }}>{until(next.data.time)}</Text>
-                <Muted>to go</Muted>
-              </View>
-            </Row>
-            {next.data.forecast || next.data.previous ? (
-              <Row style={{ gap: 8, marginTop: 10 }}>
-                {next.data.forecast ? <View style={chip}><Text style={{ color: colors.muted, fontSize: 11 }}>Forecast <Text style={{ color: colors.text, fontWeight: "700" }}>{next.data.forecast}</Text></Text></View> : null}
-                {next.data.previous ? <View style={chip}><Text style={{ color: colors.muted, fontSize: 11 }}>Previous <Text style={{ color: colors.text, fontWeight: "700" }}>{next.data.previous}</Text></Text></View> : null}
-              </Row>
-            ) : null}
-          </Press>
-        ) : <Muted>Nothing scheduled in the next few days.</Muted>}
-      </Card>
-
-      <Card delay={360}>
-        <Row style={{ justifyContent: "space-between" }}>
-          <Label>Forward tests running</Label>
-          {running.length > 0 ? <Muted>{running.length} live{winRate != null ? ` · ${winRate.toFixed(0)}% wins` : ""}</Muted> : null}
-        </Row>
-        {!forward.loaded ? <Loading /> : running.length === 0 ? <Muted>None running. Start one on the website.</Muted> : running.slice(0, 5).map((f, i) => <ForwardRow key={f.id} f={f} last={i === Math.min(running.length, 5) - 1} onPress={() => router.push(`/forward/${f.id}`)} />)}
-      </Card>
-
-      <Card delay={440}>
-        <Row style={{ justifyContent: "space-between" }}>
-          <Label>Latest alerts</Label>
-          {unread > 0 ? <Text style={{ color: colors.red, fontSize: 11, fontWeight: "700" }}>{unread} unread</Text> : null}
-        </Row>
-        {!notices.loaded ? <Loading /> : (notices.data?.items ?? []).length === 0 ? <Muted>Nothing yet. Alerts for your trades and releases land here.</Muted> : (notices.data?.items ?? []).map((n) => (
-          <Press key={n.id} onPress={() => router.push("/alerts")} style={{ paddingVertical: 7 }}>
-            <Row style={{ alignItems: "flex-start" }}>
-              <View style={{ width: 7, height: 7, borderRadius: 4, marginTop: 6, marginRight: 10, backgroundColor: n.read ? colors.border : colors.green }} />
-              <View style={{ flex: 1, paddingRight: 8 }}>
-                <Text numberOfLines={1} style={{ color: colors.text, fontSize: 13.5, fontWeight: n.read ? "500" : "700" }}>{n.title}</Text>
-                {n.body ? <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 12, marginTop: 1 }}>{n.body}</Text> : null}
-              </View>
-              <Muted>{ago(n.created_at)}</Muted>
-            </Row>
-          </Press>
-        ))}
-      </Card>
-
-      {accounts.loaded && list.length === 0 ? <Empty title="No accounts yet" text="Connect a MetaTrader account on the website to see your trades here." /> : null}
     </Screen>
   )
 }
 
-function ForwardRow({ f, last, onPress }: { f: Forward; last: boolean; onPress: () => void }) {
-  const st = f.stats
-  const win = st && st.n > 0 ? st.winRate * 100 : null
+function Quick({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
   return (
-    <Press onPress={onPress} style={{ paddingVertical: 10, borderBottomWidth: last ? 0 : 1, borderBottomColor: `${colors.border}99` }}>
-      <Row style={{ justifyContent: "space-between" }}>
-        <View style={{ flex: 1, paddingRight: 10 }}>
-          <Text numberOfLines={1} style={{ color: colors.text, fontSize: 14, fontWeight: "600" }}>{f.name.split(" · ")[0]}</Text>
-          <Muted>{f.symbol} · {f.timeframe} · {st?.n ?? 0} trade{st?.n === 1 ? "" : "s"}{st?.profitFactor ? ` · PF ${st.profitFactor.toFixed(2)}` : ""}</Muted>
+    <View style={{ flex: 1 }}>
+      <Press onPress={onPress}>
+        <View style={{ alignItems: "center", paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
+          <Ionicons name={icon} size={22} color={colors.green} />
+          <Text style={{ color: colors.text, fontSize: 11, fontWeight: "700", marginTop: 5 }}>{label}</Text>
         </View>
-        <Text style={{ color: tone(st?.totalR), fontWeight: "800", fontSize: 15 }}>{st ? `${signed(st.totalR)}R` : "-"}</Text>
-      </Row>
-      {win != null ? (
-        <Row style={{ marginTop: 7, gap: 8 }}>
-          <View style={{ flex: 1 }}><Bar pct={win} color={win >= 50 ? colors.green : colors.amber} /></View>
-          <Text style={{ color: colors.muted, fontSize: 11, width: 62, textAlign: "right" }}>{win.toFixed(0)}% wins</Text>
-        </Row>
-      ) : null}
-    </Press>
+      </Press>
+    </View>
   )
 }

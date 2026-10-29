@@ -6,6 +6,7 @@ import { Stat } from "../../src/fx"
 import { fullTime, money, price } from "../../src/format"
 import { useLoad } from "../../src/hooks"
 import { pnlOf, rOf, splitLabels } from "../../src/journal"
+import { TradeShots } from "../../src/shots"
 import { Button, Card, ErrorNote, Field, Label, Loading, Muted, Pill, Row, Screen, Title, tone } from "../../src/ui"
 
 export default function TradeDetail() {
@@ -65,6 +66,8 @@ export default function TradeDetail() {
           {t.target != null ? <Stat label="Target">{price(t.target)}</Stat> : null}
         </View>
       </Card>
+
+      <TradeShots tradeId={t.id} />
 
       <View style={{ marginTop: 16 }}>
         {error ? <View style={{ marginBottom: 12 }}><ErrorNote>{error}</ErrorNote></View> : null}

@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from "react-native"
+import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import type { ReactNode } from "react"
 import { Ambient, Glass, Rise, Skeleton } from "./fx"
@@ -19,10 +19,25 @@ export function Screen({ children, refreshing, onRefresh, scroll = true, padTop 
   )
 }
 
-export const Title = ({ children, sub }: { children: ReactNode; sub?: string }) => (
-  <View style={{ marginBottom: 14 }}>
-    <Text style={s.title}>{children}</Text>
-    {sub ? <Text style={s.sub}>{sub}</Text> : null}
+/** The EdgeLabHub symbol and wordmark. `size` is the height of the symbol; `mark` shows the symbol alone. */
+export function Brand({ size = 34, mark = false }: { size?: number; mark?: boolean }) {
+  const h = Math.round(size * 0.42)
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      <Image source={require("../assets/logo-mark.png")} style={{ width: size, height: size, borderRadius: size * 0.24 }} />
+      {mark ? null : <Image source={require("../assets/logo-wordmark.png")} resizeMode="contain" style={{ width: h * 8.18, height: h, marginLeft: size * 0.3 }} />}
+    </View>
+  )
+}
+
+export const Title = ({ children, sub, right, brand }: { children: ReactNode; sub?: string; right?: ReactNode; brand?: boolean }) => (
+  <View style={{ marginBottom: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+    {brand ? <View style={{ marginRight: 12 }}><Brand size={38} mark /></View> : null}
+    <View style={{ flex: 1, paddingRight: 10 }}>
+      <Text style={s.title}>{children}</Text>
+      {sub ? <Text style={s.sub}>{sub}</Text> : null}
+    </View>
+    {right}
   </View>
 )
 

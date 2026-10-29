@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Pressable, Text, View } from "react-native"
-import { api, type EconEvent, type NewsAlerts } from "../../src/api"
-import { clock, dayLabel, until } from "../../src/format"
-import { useLoad } from "../../src/hooks"
-import { colors, impactColor } from "../../src/theme"
-import { Card, Empty, ErrorNote, Label, Loading, Muted, Pill, Row, Screen, Title } from "../../src/ui"
+import { api, type EconEvent, type NewsAlerts } from "../src/api"
+import { clock, dayLabel, until } from "../src/format"
+import { useLoad } from "../src/hooks"
+import { colors, impactColor } from "../src/theme"
+import { Card, Empty, ErrorNote, Label, Loading, Muted, Pill, Row, Screen, Title } from "../src/ui"
 
 const IMPORTANCE = [["high", "High impact"], ["medium", "Medium+"], ["low", "All"]] as const
 const REGIONS = [["US", "US"], ["EU", "Euro"], ["GB", "UK"], ["JP", "Japan"], ["AU", "Aus"], ["CA", "Canada"], ["CH", "Swiss"], ["NZ", "NZ"], ["CN", "China"], ["IN", "India"]] as const
@@ -33,7 +33,7 @@ export default function Calendar() {
   }, [list])
 
   return (
-    <Screen refreshing={events.refreshing} onRefresh={events.refresh}>
+    <Screen refreshing={events.refreshing} onRefresh={events.refresh} padTop={false}>
       <Title sub="Tap the bell to be alerted before an event, every time it comes round">Calendar</Title>
       <Row style={{ flexWrap: "wrap" }}>{IMPORTANCE.map(([id, label]) => <Pill key={id} active={importance === id} onPress={() => setImportance(id)}>{label}</Pill>)}</Row>
       <Row style={{ flexWrap: "wrap" }}>{REGIONS.map(([id, label]) => <Pill key={id} active={regions.includes(id)} color={colors.blue} onPress={() => toggleRegion(id)}>{label}</Pill>)}</Row>

@@ -36,11 +36,10 @@ export default function TabsLayout() {
       tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.border }, tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
     }}>
       <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: icon("home-outline", "home") }} />
-      <Tabs.Screen name="positions" options={{ title: "Positions", tabBarIcon: icon("pulse-outline", "pulse") }} />
-      <Tabs.Screen name="invest" options={{ title: "Invest", tabBarIcon: icon("trending-up-outline", "trending-up") }} />
-      <Tabs.Screen name="alerts" options={{ title: "Alerts", tabBarIcon: icon("notifications-outline", "notifications"), tabBarBadge: unread > 0 ? (unread > 99 ? "99+" : unread) : undefined, tabBarBadgeStyle: { backgroundColor: colors.red, color: "#fff", fontSize: 10 } }} />
-      <Tabs.Screen name="calendar" options={{ title: "Calendar", tabBarIcon: icon("calendar-outline", "calendar") }} />
-      <Tabs.Screen name="more" options={{ title: "More", tabBarIcon: icon("ellipsis-horizontal-circle-outline", "ellipsis-horizontal-circle") }} />
+      <Tabs.Screen name="journal" options={{ title: "Journal", tabBarIcon: icon("book-outline", "book") }} />
+      <Tabs.Screen name="markets" options={{ title: "Markets", tabBarIcon: icon("search-outline", "search") }} />
+      <Tabs.Screen name="invest" options={{ title: "Portfolio", tabBarIcon: icon("pie-chart-outline", "pie-chart") }} />
+      <Tabs.Screen name="more" options={{ title: "More", tabBarIcon: icon("grid-outline", "grid"), tabBarBadge: unread > 0 ? (unread > 99 ? "99+" : unread) : undefined }} />
     </Tabs>
   )
 }

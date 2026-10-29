@@ -250,12 +250,16 @@ export function RisingWords({ text, style, delay = 0 }: { text: string; style?: 
   )
 }
 
+const isText = (c: unknown) => typeof c === "string" || typeof c === "number"
+/** True for text and numbers, also when JSX split it into pieces (`{n}%` arrives as [n, "%"]): those need a <Text> around them. */
+const plain = (c: ReactNode) => isText(c) || (Array.isArray(c) && c.every((x) => x == null || x === false || isText(x)))
+
 /** A glass tile: a small label over a number. */
-export function Stat({ label, children, tint }: { label: string; children: ReactNode; tint?: string }) {
+export function Stat({ label, children, tint, min = "46%" }: { label: string; children: ReactNode; tint?: string; min?: `${number}%` }) {
   return (
-    <View style={{ flex: 1, minWidth: "46%", backgroundColor: `${colors.bg}88`, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 10 }}>
+    <View style={{ flex: 1, minWidth: min, backgroundColor: `${colors.bg}88`, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 10 }}>
       <Text style={{ color: colors.muted, fontSize: 9.5, fontWeight: "700", letterSpacing: 1.3, textTransform: "uppercase" }}>{label}</Text>
-      <View style={{ marginTop: 3 }}>{typeof children === "string" ? <Text style={{ color: tint ?? colors.text, fontSize: 19, fontWeight: "800", letterSpacing: -0.3 }}>{children}</Text> : children}</View>
+      <View style={{ marginTop: 3 }}>{plain(children) ? <Text style={{ color: tint ?? colors.text, fontSize: 19, fontWeight: "800", letterSpacing: -0.3 }}>{children}</Text> : children}</View>
     </View>
   )
 }

@@ -1,13 +1,13 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useEffect, useRef, useState } from "react"
-import { Linking, Text, View } from "react-native"
-import { api, type Holding, type Portfolio } from "../../src/api"
-import { WEBSITE_URL } from "../../src/config"
+import { Text, View } from "react-native"
+import { api, type BrokerInfo, type Holding, type Portfolio } from "../../src/api"
+import { BrokerLogin, ConnectBroker, loginUrl } from "../../src/broker"
 import { Bar, CountUp, Hero, Press, Rise, Ring, Sparkline, Stat } from "../../src/fx"
 import { ago, money } from "../../src/format"
 import { useLoad } from "../../src/hooks"
 import { colors } from "../../src/theme"
-import { Button, Card, Empty, ErrorNote, Label, Loading, Muted, Pill, Row, Screen, tone } from "../../src/ui"
+import { Button, Card, Empty, ErrorNote, Label, Loading, Muted, Pill, Row, Screen, Title, tone } from "../../src/ui"
 
 type Tab = "holdings" | "watchlist" | "orders"
 const inr = (n: number | null | undefined, sign = false) => money(n, "INR", sign)
@@ -26,11 +26,40 @@ export default function Invest() {
     void links.refresh()
     void portfolio.refresh().finally(() => { fresh.current = false })
   }
+  const [login, setLogin] = useState<string | null>(null)
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null)
+  const [brokers, setBrokers] = useState<BrokerInfo[] | null>(null)
+  const [connecting, setConnecting] = useState(false)
   const connected = links.data?.links ?? []
+
+  const signIn = async (id: number) => {
+    setNote(null)
+    const r = await loginUrl(id)
+    if ("url" in r) setLogin(r.url); else setNote({ ok: false, text: r.error })
+  }
+  const finished = (ok: boolean | null) => {
+    setLogin(null)
+    if (ok === null) return
+    setNote({ ok, text: ok ? "Connected. Loading your holdings." : "The broker login did not finish. Try again." })
+    if (ok) { setConnecting(false); fresh.current = true; void links.refresh(); void portfolio.refresh().finally(() => { fresh.current = false }) }
+  }
+  const openConnect = async () => {
+    setConnecting((v) => !v); setNote(null)
+    if (!brokers) { try { setBrokers((await api.investBrokers()).brokers) } catch (e) { setNote({ ok: false, text: e instanceof Error ? e.message : "Could not load the brokers." }) } }
+  }
   const p = portfolio.data
 
   return (
     <Screen refreshing={portfolio.refreshing} onRefresh={refresh}>
+      <Title brand sub={connected.length > 0 ? `${connected.length} broker${connected.length === 1 ? "" : "s"} connected` : "Your investments"} right={
+        <Press onPress={() => void openConnect()}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: connecting ? colors.card : colors.green, borderWidth: 1, borderColor: colors.green, borderRadius: 22, paddingLeft: 11, paddingRight: 15, paddingVertical: 10, shadowColor: colors.green, shadowOpacity: connecting ? 0 : 0.55, shadowRadius: 12, shadowOffset: { width: 0, height: 0 }, elevation: connecting ? 0 : 8 }}>
+            <Ionicons name={connecting ? "close" : "add-circle"} size={20} color={connecting ? colors.green : "#04110b"} />
+            <Text style={{ color: connecting ? colors.green : "#04110b", fontWeight: "800", fontSize: 13 }}>{connecting ? "Close" : connected.length > 0 ? "Add broker" : "Connect broker"}</Text>
+          </View>
+        </Press>
+      }>Portfolio</Title>
+      {connecting ? <View style={{ marginBottom: 12 }}>{brokers ? <ConnectBroker brokers={brokers} onLogin={setLogin} onDone={() => { void links.refresh() }} /> : <Loading />}</View> : null}
       <Rise>
         <Hero tint={colors.blue}>
           <Text style={{ color: colors.blue, fontSize: 11, fontWeight: "700", letterSpacing: 2.4, textTransform: "uppercase" }}>Investments</Text>
@@ -61,9 +90,11 @@ export default function Invest() {
       {portfolio.error ? <View style={{ marginTop: 12 }}><ErrorNote>{portfolio.error}</ErrorNote></View> : null}
       {(p?.problems ?? []).map((x) => <View key={x.link_id} style={{ marginTop: 12 }}><ErrorNote>{x.name}: {x.error}</ErrorNote></View>)}
       {connected.filter((l) => l.needs_login).map((l) => (
-        <View key={l.id} style={{ marginTop: 12 }}><Card><Muted>{l.name || l.label} needs you to sign in again (brokers end the session each day). Do it on the website, then pull down here.</Muted>
-          <View style={{ marginTop: 10 }}><Button tone="ghost" onPress={() => void Linking.openURL(`${WEBSITE_URL}/portfolio`)}>Open the website</Button></View></Card></View>
+        <View key={l.id} style={{ marginTop: 12 }}><Card><Muted>{l.name || l.label} needs you to sign in again (brokers end the session each day).</Muted>
+          <View style={{ marginTop: 10 }}><Button onPress={() => void signIn(l.id)}>Sign in to {l.label}</Button></View></Card></View>
       ))}
+      {note ? <View style={{ marginTop: 12 }}>{note.ok ? <Card><Text style={{ color: colors.green, fontSize: 13, fontWeight: "700" }}>{note.text}</Text></Card> : <ErrorNote>{note.text}</ErrorNote>}</View> : null}
+      <BrokerLogin url={login} onClose={finished} />
 
       {p && p.holdings.length > 1 && p.totals.value > 0 ? <Allocation holdings={p.holdings} total={p.totals.value} /> : null}
 
@@ -79,7 +110,7 @@ export default function Invest() {
               {connected.map((l) => <Pill key={l.id} active={link === l.id} onPress={() => setLink(l.id)} color={colors.blue}>{l.name || l.label}</Pill>)}
             </Row>
           ) : null}
-          <Holdings p={p} loaded={portfolio.loaded} noBroker={links.loaded && connected.length === 0} />
+          <Holdings p={p} loaded={portfolio.loaded} noBroker={links.loaded && connected.length === 0} onConnect={() => void openConnect()} />
         </>
       ) : tab === "watchlist" ? <Watchlist /> : <Orders />}
     </Screen>
@@ -115,10 +146,10 @@ function Allocation({ holdings, total }: { holdings: Holding[]; total: number })
   )
 }
 
-function Holdings({ p, loaded, noBroker }: { p: Portfolio | null; loaded: boolean; noBroker: boolean }) {
+function Holdings({ p, loaded, noBroker, onConnect }: { p: Portfolio | null; loaded: boolean; noBroker: boolean; onConnect: () => void }) {
   const [open, setOpen] = useState<string | null>(null)
   if (!loaded) return <Loading />
-  if (noBroker) return <Empty title="No broker connected" text="Connect Dhan, Fyers or Angel One under Portfolio on the website. Your holdings then show up here." />
+  if (noBroker) return <><Empty title="No broker connected" text="Connect Dhan, Fyers or Angel One and your holdings show up here." /><Button onPress={onConnect}>Connect a broker</Button></>
   const list = [...(p?.holdings ?? [])].sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
   if (list.length === 0) return <Empty title="No holdings" text="Nothing is held in the connected accounts right now." />
   const total = p?.totals.value || 1

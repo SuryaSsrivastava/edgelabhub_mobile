@@ -29,6 +29,7 @@ module.exports = {
     plugins: [
       "expo-router",
       "expo-secure-store",
+      "./plugins/withLiveService",
       ["expo-notifications", { icon: "./assets/notification-icon.png", color: "#22d38a" }],
     ],
     experiments: { typedRoutes: false },

@@ -1,0 +1,15 @@
+# What EAS leaves out of the build upload. When this file exists EAS uses it INSTEAD of .gitignore.
+# It is .gitignore minus google-services.json, which the Android build needs for push notifications
+# (it stays out of git, but must reach the builder).
+node_modules/
+.expo/
+dist/
+web-build/
+*.apk
+*.aab
+*.ipa
+GoogleService-Info.plist
+*.p8
+*.pem
+.env
+.env.*

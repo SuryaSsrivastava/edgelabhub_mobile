@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { Alert, Pressable, Text, View } from "react-native"
-import { api, type Notice } from "../../src/api"
-import { ago } from "../../src/format"
-import { useLoad } from "../../src/hooks"
-import { routeFor } from "../../src/push"
-import { colors } from "../../src/theme"
-import { Card, Empty, ErrorNote, Loading, Muted, Row, Screen, Title } from "../../src/ui"
+import { api, type Notice } from "../src/api"
+import { ago } from "../src/format"
+import { useLoad } from "../src/hooks"
+import { routeFor } from "../src/push"
+import { colors } from "../src/theme"
+import { Card, Empty, ErrorNote, Loading, Muted, Row, Screen, Title } from "../src/ui"
 
 const KIND: Record<string, { icon: React.ComponentProps<typeof Ionicons>["name"]; color: string }> = {
   forward: { icon: "pulse", color: colors.green },
@@ -31,7 +31,7 @@ export default function Alerts() {
   ])
 
   return (
-    <Screen refreshing={n.refreshing} onRefresh={n.refresh}>
+    <Screen refreshing={n.refreshing} onRefresh={n.refresh} padTop={false}>
       <Title sub={n.data ? (n.data.unread > 0 ? `${n.data.unread} unread` : "All caught up") : undefined}>Alerts</Title>
       {n.error ? <ErrorNote>{n.error}</ErrorNote> : null}
       {items.length > 0 ? (
