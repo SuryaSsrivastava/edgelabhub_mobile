@@ -2,13 +2,14 @@ import { Ionicons } from "@expo/vector-icons"
 import * as Notifications from "expo-notifications"
 import { Tabs } from "expo-router"
 import { useEffect, useState } from "react"
-import { AppState } from "react-native"
+import { AppState, type ColorValue } from "react-native"
 import { api } from "../../src/api"
 import { registerForPush } from "../../src/push"
+import { TabBar } from "../../src/tabbar"
 import { colors } from "../../src/theme"
 
 type IconName = React.ComponentProps<typeof Ionicons>["name"]
-const icon = (name: IconName, focused: IconName) => ({ color, focused: f, size }: { color: string; focused: boolean; size: number }) => <Ionicons name={f ? focused : name} size={size} color={color} />
+const icon = (name: IconName, focused: IconName) => ({ color, focused: f, size }: { color: ColorValue; focused: boolean; size: number }) => <Ionicons name={f ? focused : name} size={size} color={color as string} />
 
 export default function TabsLayout() {
   const [unread, setUnread] = useState(0)
@@ -30,12 +31,13 @@ export default function TabsLayout() {
   }, [])
 
   return (
-    <Tabs screenOptions={{
+    <Tabs tabBar={(props) => <TabBar {...props} />} screenOptions={{
       headerShown: false, tabBarActiveTintColor: colors.green, tabBarInactiveTintColor: colors.muted,
       tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.border }, tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
     }}>
       <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: icon("home-outline", "home") }} />
       <Tabs.Screen name="positions" options={{ title: "Positions", tabBarIcon: icon("pulse-outline", "pulse") }} />
+      <Tabs.Screen name="invest" options={{ title: "Invest", tabBarIcon: icon("trending-up-outline", "trending-up") }} />
       <Tabs.Screen name="alerts" options={{ title: "Alerts", tabBarIcon: icon("notifications-outline", "notifications"), tabBarBadge: unread > 0 ? (unread > 99 ? "99+" : unread) : undefined, tabBarBadgeStyle: { backgroundColor: colors.red, color: "#fff", fontSize: 10 } }} />
       <Tabs.Screen name="calendar" options={{ title: "Calendar", tabBarIcon: icon("calendar-outline", "calendar") }} />
       <Tabs.Screen name="more" options={{ title: "More", tabBarIcon: icon("ellipsis-horizontal-circle-outline", "ellipsis-horizontal-circle") }} />

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { apiServer, saveServer } from "../src/api"
+import { apiServer, saveServer, validServer } from "../src/api"
 import { useAuth } from "../src/auth"
 import { colors, radius } from "../src/theme"
 import { Button, ErrorNote } from "../src/ui"
@@ -19,7 +19,10 @@ export default function Login() {
     if (!email.trim() || !password) { setError("Enter your email and password."); return }
     setBusy(true); setError(null)
     try {
-      if (advanced) await saveServer(server)
+      if (advanced) {
+        if (!validServer(server)) { setError("The server must be a full address, like https://edgelabhub.com/api/v1"); return }
+        await saveServer(server)
+      }
       await signIn(email, password)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not sign in.")

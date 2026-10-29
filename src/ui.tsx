@@ -1,17 +1,21 @@
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native"
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type ViewStyle } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import type { ReactNode } from "react"
+import { Ambient, Glass, Rise, Skeleton } from "./fx"
 import { colors, radius } from "./theme"
 
 export function Screen({ children, refreshing, onRefresh, scroll = true, padTop = true }: { children: ReactNode; refreshing?: boolean; onRefresh?: () => void; scroll?: boolean; padTop?: boolean }) {
   const insets = useSafeAreaInsets()
   const pad = { paddingTop: padTop ? insets.top + 8 : 0, paddingHorizontal: 16, paddingBottom: 32 }
-  if (!scroll) return <View style={[s.screen, pad]}>{children}</View>
+  if (!scroll) return <View style={s.screen}><Ambient /><View style={[{ flex: 1 }, pad]}>{children}</View></View>
   return (
-    <ScrollView style={s.screen} contentContainerStyle={pad} keyboardShouldPersistTaps="handled"
-      refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.green} colors={[colors.green]} progressBackgroundColor={colors.card} /> : undefined}>
-      {children}
-    </ScrollView>
+    <View style={s.screen}>
+      <Ambient />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={pad} keyboardShouldPersistTaps="handled"
+        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.green} colors={[colors.green]} progressBackgroundColor={colors.card} /> : undefined}>
+        {children}
+      </ScrollView>
+    </View>
   )
 }
 
@@ -22,11 +26,11 @@ export const Title = ({ children, sub }: { children: ReactNode; sub?: string }) 
   </View>
 )
 
-export const Card = ({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) => <View style={[s.card, style]}>{children}</View>
+export const Card = ({ children, style, delay = 0 }: { children: ReactNode; style?: StyleProp<ViewStyle>; delay?: number }) => <Rise delay={delay}><Glass style={style}>{children}</Glass></Rise>
 
 export const Label = ({ children }: { children: ReactNode }) => <Text style={s.label}>{children}</Text>
 
-export const Muted = ({ children, style }: { children: ReactNode; style?: object }) => <Text style={[s.muted, style]}>{children}</Text>
+export const Muted = ({ children, style, numberOfLines }: { children: ReactNode; style?: object; numberOfLines?: number }) => <Text numberOfLines={numberOfLines} style={[s.muted, style]}>{children}</Text>
 
 export function Pill({ children, active, onPress, color }: { children: ReactNode; active?: boolean; onPress?: () => void; color?: string }) {
   const c = color ?? colors.green
@@ -58,7 +62,13 @@ export const ErrorNote = ({ children }: { children: ReactNode }) => (
   <View style={s.error}><Text style={{ color: colors.red, fontSize: 13 }}>{children}</Text></View>
 )
 
-export const Loading = () => <View style={{ paddingVertical: 40 }}><ActivityIndicator color={colors.green} /></View>
+export const Loading = () => (
+  <View style={{ paddingVertical: 12, gap: 10 }}>
+    <Skeleton height={26} width="55%" round={10} />
+    <Skeleton height={14} width="85%" />
+    <Skeleton height={14} width="70%" />
+  </View>
+)
 
 export const Row = ({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) => <View style={[{ flexDirection: "row", alignItems: "center" }, style]}>{children}</View>
 
@@ -68,7 +78,7 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   title: { color: colors.text, fontSize: 26, fontWeight: "700", letterSpacing: -0.4 },
   sub: { color: colors.muted, fontSize: 13, marginTop: 2 },
-  card: { backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 12 },
+  card: { backgroundColor: `${colors.card}d9`, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 12 },
   label: { color: colors.muted, fontSize: 10, fontWeight: "700", letterSpacing: 1.4, textTransform: "uppercase", marginBottom: 6 },
   muted: { color: colors.muted, fontSize: 12 },
   pill: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6, marginRight: 8, marginBottom: 8 },
@@ -79,3 +89,12 @@ const s = StyleSheet.create({
   emptyTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
   error: { backgroundColor: `${colors.red}18`, borderColor: `${colors.red}55`, borderWidth: 1, borderRadius: radius.md, padding: 12, marginBottom: 12 },
 })
+
+export function Field({ label, ...props }: { label: string } & React.ComponentProps<typeof TextInput>) {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={s.label}>{label}</Text>
+      <TextInput placeholderTextColor={colors.muted} {...props} style={[{ backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 12, color: colors.text, fontSize: 15 }, props.multiline && { minHeight: 90, textAlignVertical: "top" }, props.style]} />
+    </View>
+  )
+}

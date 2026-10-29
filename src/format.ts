@@ -37,3 +37,5 @@ export const until = (iso: string) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60)
   return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : h > 0 ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`
 }
+
+export const fullTime = (iso: string) => { const d = new Date(iso); return `${d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · ${clock(iso)}` }

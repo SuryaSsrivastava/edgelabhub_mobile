@@ -7,6 +7,7 @@ module.exports = {
   expo: {
     name: "EdgeLabHub",
     slug: "edgelabhub",
+    owner: "edgelabhub",
     scheme: "edgelabhub",
     version: "1.0.0",
     orientation: "portrait",
@@ -33,7 +34,7 @@ module.exports = {
     experiments: { typedRoutes: false },
     extra: {
       // `eas init` writes the project id here; it is needed for push tokens
-      eas: { projectId: process.env.EAS_PROJECT_ID || "" },
+      eas: { projectId: process.env.EAS_PROJECT_ID || "15d1cee2-979f-416d-96cd-65645c7d0844" },
     },
   },
 }

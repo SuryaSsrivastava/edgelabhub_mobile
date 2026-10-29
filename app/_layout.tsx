@@ -45,6 +45,9 @@ function Gate() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="forward/[id]" options={{ title: "Forward test" }} />
       <Stack.Screen name="settings" options={{ title: "Settings" }} />
+      <Stack.Screen name="journal/index" options={{ title: "Journal" }} />
+      <Stack.Screen name="journal/new" options={{ title: "Log a trade" }} />
+      <Stack.Screen name="journal/[id]" options={{ title: "Trade" }} />
     </Stack>
   )
 }

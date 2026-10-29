@@ -1,12 +1,12 @@
 import * as Device from "expo-device"
-import Constants from "expo-constants"
+import Constants, { ExecutionEnvironment } from "expo-constants"
 import * as Notifications from "expo-notifications"
 import { Platform } from "react-native"
 import { api } from "./api"
 
 // Show a notification even while the app is open.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }),
+  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
 })
 
 let registered: string | null = null
@@ -24,13 +24,18 @@ export function routeFor(link?: string | null): string {
 /** Ask for permission, get this phone's Expo push token and tell the server about it. Returns a short status the Settings screen can show. */
 export async function registerForPush(): Promise<{ ok: boolean; message: string }> {
   if (!Device.isDevice) return { ok: false, message: "Push notifications need a real phone, not a simulator." }
+  if (Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return { ok: false, message: "Push notifications do not work in Expo Go. Install the app build to use them." }
   if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("alerts", {
-      name: "Alerts",
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#22d38a",
-    })
+    try {
+      await Notifications.setNotificationChannelAsync("alerts", {
+        name: "Alerts",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#22d38a",
+      })
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Could not set up the notification channel." }
+    }
   }
   let { status } = await Notifications.getPermissionsAsync()
   if (status !== "granted") status = (await Notifications.requestPermissionsAsync()).status

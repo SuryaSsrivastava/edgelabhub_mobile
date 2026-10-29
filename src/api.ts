@@ -17,6 +17,18 @@ export type ForwardTrade = { id: number; side: "long" | "short"; entry: number; 
 export type ForwardFull = Forward & { result: { closed: ForwardTrade[]; open: ForwardTrade[]; stats: ForwardStats } | null }
 export type EconEvent = { id: string; series: string; time: string; country: string; currency: string; name: string; importance: "high" | "medium" | "low"; actual: string; forecast: string; previous: string; above_forecast: boolean | null }
 export type NewsAlerts = { enabled: boolean; currencies: string[]; lead_minutes: number; events: string[] }
+export type BrokerLink = { id: number; broker: "dhan" | "fyers" | "angel"; label: string; name: string; status: "active" | "error"; error: string; alias: string; balance: number | null; needs_login?: boolean }
+export type Holding = { symbol: string; name: string; exchange: string; qty: number; avg: number; ltp: number | null; invested: number; value: number | null; pnl: number | null; pnl_pct: number | null; day_pnl: number | null; link_id: number; broker: string; broker_label: string; account: string }
+export type Portfolio = { holdings: Holding[]; problems: { link_id: number; name: string; error: string }[]; totals: { invested: number; value: number; pnl: number; pnl_pct: number | null; day_pnl: number; day_pct: number | null; unpriced: number; count: number }; cached_at?: number }
+export type WatchStock = { id: number; market: string; symbol: string; name: string; added_price: number | null; added_at: string; price: number | null; chg_1d: number | null; pe: number | null; market_cap: number | null; sector: string; investable: boolean }
+export type InvestOrder = { id: number; broker: string; side: string; symbol: string; qty: number; order_type: string; price: number | null; status: string; broker_order_id: string; message: string; created_at: string }
+export type JournalTrade = {
+  id: number; symbol: string; side: "Long" | "Short"; setup: string; entry: number; exit: number; qty: number; risk: number; opened_at: string; exit_at: string | null
+  emotions: string[]; tags: string[]; rating: number; note: string; source: string; broker: string; fees: number; pnl: number | null
+  stop: number | null; target: number | null; followed_plan: boolean | null; account_id: number | null; manual: boolean
+}
+export type NewTrade = { symbol: string; side: "Long" | "Short"; entry: number; exit: number; qty: number; risk: number; setup?: string; rating?: number; note?: string; emotions?: string[]; tags?: string[]; followed_plan?: boolean | null }
+export type TradeEdit = { note?: string; rating?: number; setup?: string; emotions?: string[]; tags?: string[]; followed_plan?: boolean | null }
 export type Prefs = { push: boolean; promos?: boolean; [k: string]: unknown }
 
 // ---- the connection -----------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -34,13 +46,18 @@ export const apiServer = () => server
 export async function restoreSession(): Promise<boolean> {
   try {
     token = await SecureStore.getItemAsync(TOKEN_KEY)
-    server = (await SecureStore.getItemAsync(SERVER_KEY)) || DEFAULT_API_URL
+    const saved = await SecureStore.getItemAsync(SERVER_KEY)
+    server = saved && validServer(saved) ? saved : DEFAULT_API_URL  // a half-typed address saved earlier must never replace the built-in one
   } catch { token = null }
   return !!token
 }
 
+/** A full web address: http(s)://host... (anything else, like "/api/", cannot be reached). */
+export const validServer = (url: string) => /^https?:\/\/[^\s/]+(\/\S*)?$/i.test(url.trim())
+
 export async function saveServer(url: string) {
-  server = url.trim().replace(/\/+$/, "") || DEFAULT_API_URL
+  const clean = url.trim().replace(/\/+$/, "")
+  server = clean && validServer(clean) ? clean : DEFAULT_API_URL
   try { await SecureStore.setItemAsync(SERVER_KEY, server) } catch { /* keep it for this run */ }
 }
 
@@ -97,6 +114,15 @@ export const api = {
   forwardTest: (id: number) => request<ForwardFull>(`/forward/${id}`),
   calendar: (importance: string, countries: string[]) =>
     request<{ events: EconEvent[]; available: boolean }>(`/market/economic-calendar?importance=${importance}&countries=${encodeURIComponent(countries.join(","))}&back=1&ahead=7`),
+  investLinks: () => request<{ links: BrokerLink[] }>("/invest/links"),
+  investPortfolio: (linkId?: number, fresh?: boolean) => request<Portfolio>(`/invest/portfolio?${linkId ? `link_id=${linkId}&` : ""}${fresh ? "refresh=true" : ""}`),
+  investWatchlist: () => request<{ stocks: WatchStock[] }>("/invest/screened"),
+  investOrders: () => request<{ orders: InvestOrder[] }>("/invest/orders"),
+  investChart: (symbol: string) => request<{ symbol: string; history: [number, number][] }>(`/invest/chart/${encodeURIComponent(symbol)}`),
+  journalTrades: (limit = 300) => request<JournalTrade[]>(`/journal/trades?limit=${limit}`),
+  addJournalTrade: (b: NewTrade) => request<JournalTrade>("/journal/trades", { method: "POST", body: JSON.stringify(b) }),
+  editJournalTrade: (id: number, b: TradeEdit) => request<JournalTrade>(`/journal/trades/${id}`, { method: "PATCH", body: JSON.stringify(b) }),
+  deleteJournalTrade: (id: number) => request<void>(`/journal/trades/${id}`, { method: "DELETE" }),
   newsAlerts: () => request<NewsAlerts>("/notifications/news-alerts"),
   saveNewsAlerts: (b: NewsAlerts) => request<NewsAlerts>("/notifications/news-alerts", { method: "PUT", body: JSON.stringify(b) }),
 }

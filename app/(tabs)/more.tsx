@@ -21,6 +21,10 @@ export default function More() {
         <Card><Row style={{ justifyContent: "space-between" }}><Row><Ionicons name="settings-outline" size={20} color={colors.text} /><Text style={{ color: colors.text, fontSize: 15, fontWeight: "600", marginLeft: 10 }}>Settings and notifications</Text></Row><Ionicons name="chevron-forward" size={18} color={colors.muted} /></Row></Card>
       </Pressable>
 
+      <Pressable onPress={() => router.push("/journal")}>
+        <Card><Row style={{ justifyContent: "space-between" }}><Row><Ionicons name="journal-outline" size={20} color={colors.text} /><Text style={{ color: colors.text, fontSize: 15, fontWeight: "600", marginLeft: 10 }}>Trading journal</Text></Row><Ionicons name="chevron-forward" size={18} color={colors.muted} /></Row></Card>
+      </Pressable>
+
       <Label>Forward tests</Label>
       {tests.error ? <ErrorNote>{tests.error}</ErrorNote> : null}
       {!tests.loaded ? <Loading /> : list.length === 0 ? <Empty title="No forward tests" text="Freeze a strategy on the website and judge it on the market that comes next." /> : list.map((f) => (
